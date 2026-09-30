@@ -9,6 +9,7 @@ import { Store, initialState } from '../src/store.ts';
 import { run } from '../src/agents/run.ts';
 import type { RunOptions } from '../src/agents/run.ts';
 import { codex } from '../src/agents/codex.ts';
+import { fileInstructions } from '../src/files.ts';
 import { Ilink, IlinkError } from '../src/wechat/ilink.ts';
 import { auth, channel, eventually, message, setup, untilAbort } from './helpers.ts';
 
@@ -35,7 +36,7 @@ test('queued messages merge once; sessions persist immediately and preamble appe
   assert.equal(calls.length, 1); assert.equal(bot.queue.length, 2); assert.match(calls[0].prompt, /^你的回复会发到微信/);
   assert.equal(new Store(home, initialState('pi', home)).state.sessions[`claude:${home}`], 'persisted-session');
   finish[0]('first result'); await eventually(() => calls.length === 2);
-  assert.equal(calls[1].prompt, 'two\n\nthree'); assert.equal(calls[1].sessionId, 'persisted-session');
+  assert.equal(calls[1].prompt, 'two\n\nthree' + fileInstructions); assert.equal(calls[1].sessionId, 'persisted-session');
   finish[1]('second result'); await eventually(() => !bot.active && !bot.replies.pending);
 });
 test('commands stay responsive while sends are blocked; stop clears queue and prevents switches until exit', async t => {
@@ -67,7 +68,7 @@ test('exact command matching, aliases, model reset, project session reuse and /n
   send('/agent 1'); send('/new'); assert.equal(store.state.sessions[`claude:${home}`], undefined);
   send('/agent 2'); assert.equal(store.state.sessions[`codex:${home}`], 'codex-session');
   for (const text of ['/Users/me/a.ts 这里有 bug', '/statusXYZ', '1']) { send(text); await bot.active?.done; }
-  assert.deepEqual(prompts, ['/Users/me/a.ts 这里有 bug', '/statusXYZ', '1']);
+  assert.deepEqual(prompts, ['/Users/me/a.ts 这里有 bug', '/statusXYZ', '1'].map(text => text + fileInstructions));
   send('/帮助'); send('/状态'); send('/更多');
   await eventually(() => !bot.replies.pending);
 });
@@ -101,7 +102,7 @@ test('HTTP iLink → stdin child → final WeChat reply works end to end and res
   const execute: typeof run = (spec, options) => run({ ...spec, command: process.execPath, args: () => ['-e', `
     let prompt='';process.stdin.setEncoding('utf8');process.stdin.on('data',s=>prompt+=s);process.stdin.on('end',()=>{
     console.log(JSON.stringify({type:'thread.started',thread_id:'http-session'}));
-    console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'result:'+prompt.split('\\n').at(-1)}}));});`], parseLine: codex.parseLine }, options);
+    console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'result:'+prompt.split('\\n')[2]}}));});`], parseLine: codex.parseLine }, options);
   const controller = new AbortController(), bot = new Bot(store, config, auth, new Ilink(localAuth), execute, () => {});
   const running = bot.start(controller.signal);
   t.after(async () => { controller.abort(); await running; });
@@ -113,6 +114,6 @@ test('HTTP iLink → stdin child → final WeChat reply works end to end and res
   const restored = new Store(home, initialState('claude', home)); let resumed: RunOptions | undefined;
   const second = new Bot(restored, config, auth, channel(), async (_spec, o) => { resumed = o; return 'continued'; }, () => {});
   second.accept({ get_updates_buf: '3', msgs: [message('continue')] }); await second.active?.done;
-  assert.equal(resumed?.sessionId, 'http-session'); assert.equal(resumed?.prompt, 'continue');
+  assert.equal(resumed?.sessionId, 'http-session'); assert.equal(resumed?.prompt, 'continue' + fileInstructions);
   await eventually(() => !second.replies.pending);
 });

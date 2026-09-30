@@ -1,6 +1,6 @@
 # Third-party notices
 
-The iLink request shapes and login flow in `src/wechat/` are adapted from
+The iLink request shapes, login flow, CDN encryption and media transfer in `src/wechat/` are adapted from
 `@tencent-weixin/openclaw-weixin` version 2.4.9.
 Source: https://www.npmjs.com/package/@tencent-weixin/openclaw-weixin/v/2.4.9
 

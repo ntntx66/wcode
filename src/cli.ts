@@ -1,18 +1,21 @@
 #!/usr/bin/env node
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { dataDir, directory, loadConfig, record, VERSION } from './config.ts';
 import { acquireLock, initialState, readJson, Store, writeJson } from './store.ts';
 import type { Auth } from './store.ts';
 import { trustedBase } from './wechat/ilink.ts';
 import { login } from './wechat/login.ts';
 import { Bot } from './bot.ts';
+import { service } from './service.ts';
 
 async function main(): Promise<void> {
   const [action, ...args] = process.argv.slice(2);
   if (action === '--version') { console.log(VERSION); return; }
   if (!action || action === '--help' || action === '-h') {
-    console.log('wcode login          扫码登录\nwcode start          启动 coding bot\nwcode start --echo   协议验证：只回声，不运行 agent\n数据目录：~/.wcode（可用 WCODE_HOME 覆盖）'); return;
+    console.log('wcode login          扫码登录\nwcode start          启动 coding bot\nwcode start --echo   协议验证：只回声，不运行 agent\nwcode service install|status|uninstall  macOS 后台服务\n数据目录：~/.wcode（可用 WCODE_HOME 覆盖）'); return;
   }
+  if (action === 'service' && args.length === 1) { service(args[0], dataDir(), fileURLToPath(import.meta.url)); return; }
   if (!['login', 'start'].includes(action) || (args.length && !(action === 'start' && args.length === 1 && args[0] === '--echo')))
     throw new Error('用法：wcode login | start [--echo]');
   if (process.platform === 'win32') throw new Error('当前版本需要 macOS/Linux 的 POSIX 进程组');
@@ -36,6 +39,7 @@ async function main(): Promise<void> {
       const bot = new Bot(store, config, auth);
       if (args[0] === '--echo') bot.execute = async (_spec, o) => o.prompt;
       if (args[0] === '--echo') config.mobilePreamble = false;
+      if (args[0] === '--echo') bot.fileReturns = false;
       console.log(`wcode ${VERSION} 已启动${args[0] === '--echo' ? '（回声模式）' : ''}，Ctrl-C 退出。`);
       await bot.start(controller.signal);
     }

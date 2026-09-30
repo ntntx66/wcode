@@ -1,14 +1,16 @@
 import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { isAgent, record } from './config.ts';
+import { validAgentName, record } from './config.ts';
 import type { AgentName } from './config.ts';
+import type { LocalFile } from './files.ts';
+import type { FileItem } from './wechat/media.ts';
 
 export type Auth = { token: string; baseUrl: string; botId: string; ownerId: string };
 export type State = {
   cursor: string; contextToken: string; agent: AgentName; cwd: string;
   models: Partial<Record<AgentName, string>>; sessions: Record<string, string>;
-  outbox: { id: string; text: string }[]; pages: string[];
+  outbox: { id: string; text: string; file?: LocalFile; item?: FileItem }[]; pages: string[];
 };
 export const initialState = (agent: AgentName, cwd: string): State =>
   ({ cursor: '', contextToken: '', agent, cwd, models: {}, sessions: {}, outbox: [], pages: [] });
@@ -28,17 +30,23 @@ export function writeJson(path: string, value: unknown): void {
 }
 export class Store {
   state: State;
-  path: string;
+  path: string; home: string;
   constructor(home: string, defaults: State) {
+    this.home = home;
     this.path = join(home, 'state.json');
     const s = record(readJson(this.path, defaults));
-    if (!isAgent(s.agent) || typeof s.cwd !== 'string' || !s.cwd.startsWith('/') ||
+    if (!validAgentName(s.agent) || typeof s.cwd !== 'string' || !s.cwd.startsWith('/') ||
       typeof s.cursor !== 'string' || typeof s.contextToken !== 'string' ||
       !s.models || typeof s.models !== 'object' || Array.isArray(s.models) ||
       !s.sessions || typeof s.sessions !== 'object' || Array.isArray(s.sessions) || !Array.isArray(s.outbox) ||
       Object.values(record(s.models)).some(x => typeof x !== 'string') ||
       Object.values(record(s.sessions)).some(x => typeof x !== 'string') ||
-      s.outbox.some(x => typeof x?.id !== 'string' || typeof x?.text !== 'string') ||
+      s.outbox.some(x => typeof x?.id !== 'string' || typeof x?.text !== 'string' ||
+        (x.file !== undefined && (typeof x.file?.path !== 'string' || !x.file.path.startsWith('/') || typeof x.file?.name !== 'string' ||
+          !Number.isSafeInteger(x.file?.size) || x.file.size < 0 || typeof x.file?.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(x.file.sha256))) ||
+        (x.item !== undefined && (!x.file || x.item?.type !== 4 || typeof x.item.file_item?.file_name !== 'string' ||
+          typeof x.item.file_item?.len !== 'string' || typeof x.item.file_item?.media?.encrypt_query_param !== 'string' ||
+          typeof x.item.file_item?.media?.aes_key !== 'string' || x.item.file_item?.media?.encrypt_type !== 1))) ||
       (s.pages !== undefined && (!Array.isArray(s.pages) || s.pages.some(x => typeof x !== 'string'))))
       throw new Error('state.json 格式无效；请备份后修复，不能安全地重置游标');
     this.state = { ...s, pages: s.pages ?? [] } as State;

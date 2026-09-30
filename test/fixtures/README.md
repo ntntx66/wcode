@@ -9,3 +9,5 @@
 初次 Codex resume 录到了正确最终文本和 `turn.completed`，但进程在本机 GitHub MCP 认证失败后的退出阶段停滞，120 秒后由录制脚本终止。这个样本证明续接和输出格式，不证明正常退出。完整实测状态见 [验证记录](../../docs/verification.md)。
 
 `npm run smoke -- claude codex pi` 可通过实际执行器重新验证新会话、工具事件和续接。它会使用已登录的 agent，产生正常的模型调用费用；普通 `npm test` 只读这些样本，不调用模型或微信。
+
+`scene-a.png` 和 `scene-b.png` 是确定性生成的 400×240 测试图。a 为左红方块、右蓝圆；b 为左绿三角、右黄长方形。`npm run smoke:media` 分别在新会话和续会话传入两图，严格校验左右位置、颜色与形状。`WCODE_SMOKE_MODEL` 可临时指定视觉模型，不修改全局设置。

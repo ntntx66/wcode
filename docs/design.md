@@ -1,8 +1,9 @@
 # wcode 设计文档
 
-> 状态：M0/M1 代码已实现，28 项自动化测试及主要微信真机链路已通过 · 2026-09-30
+> 状态：M0–M3 代码已实现；自动化、真实 agent 图片和安装验证见验证记录 · 2026-09-30
 > 已定：TypeScript；默认 yolo（agent 不向微信请求审批）
-> 研究依据、真实 CLI 样本和验证边界见 [verification.md](verification.md)。下文保留设计基线，M2/M3 为后续阶段。
+> 研究依据、真实 CLI 样本和验证边界见 [verification.md](verification.md)。下文保留原设计基线，M2/M3 实施细化见 §14。
+> M3 按本次确认交付可安装的 `.tgz`，暂不公开发布 npm；注册表已有其他项目使用 `wcode` 名称。
 > 微信的长时 token 有效性、限频阈值和真实消息长度上限仍待专项实测。
 
 ## 1. 目标
@@ -57,7 +58,7 @@
 | 数据库 | 状态只有几个字段，JSON 文件足够 |
 | Web UI、插件系统 | 配置文件加聊天命令足够 |
 | 官方插件中的 markdown 过滤状态机、引用 SQLite、多账号、routeTag、typing ticket 缓存 | ZCode 不用这些也能正常工作 |
-| 构建步骤 | Node ≥ 22.18 可以直接运行 .ts（已在本机 v26 验证） |
+| 本地开发构建步骤 | Node ≥ 22.18 可以直接运行 .ts；M3 的安装包另用 tsc 生成 JavaScript |
 
 ## 4. 总体架构
 
@@ -146,7 +147,7 @@ export type AgentEvent =
 
 ### 6.2 三个 agent
 
-命令行参数已对照本机 `--help` 核实（claude 2.1.283、codex 0.157.1、pi 0.84.2）。事件字段名还没核实，M1 会录制真实输出作为测试样本，再逐一核对。
+命令行参数已对照本机 `--help` 核实（claude 2.1.283、codex 0.157.1、pi 0.84.2）。事件字段已用真实输出逐一核实，样本保存于 `test/fixtures/`。
 
 | | Claude Code | Codex | pi |
 |---|---|---|---|
@@ -210,6 +211,7 @@ export type AgentEvent =
 | `/cd [别名\|序号\|路径]` | | 不带参数时列出配置里的项目；也接受绝对路径或 `~/…` |
 | `/model [名称\|default]` | | 设置当前 agent 的模型 |
 | `/more` | `/更多` | 发送超长回复的下一页 |
+| `/send 路径` | `/发送 路径` | 回传本机普通文件，接受相对当前项目、绝对路径与 `~/…` |
 
 选择一律通过命令参数完成（如 `/agent 2`），不做"回复数字进行选择"这种需要记住上下文的交互。任务运行中执行 `/agent`、`/cd`、`/model`、`/new`，会提示先 `/stop`。
 
@@ -252,7 +254,8 @@ auth.json 和 state.json 的写入都用"写临时文件，再 rename"的方式�
 
 ```
 wcode login    在终端扫码登录，写入 auth.json
-wcode start    前台运行；要后台运行可以用 tmux 或 nohup，M3 再提供 launchd 配置
+wcode start    前台运行
+wcode service install|status|uninstall    macOS 用户 launchd 服务
 ```
 
 ## 10. 安全（yolo 前提下）
@@ -315,7 +318,7 @@ wcode/
 | M0 协议验证（约半天） | 登录，加一个回声 bot | 回答 §13 列出的 5 个问题 |
 | M1 MVP | 三个 agent、8 个命令、分段和补发、typing、语音转写、状态持久化、解析器单测 | 在手机上走通：切到某个项目，让 Claude 跑测试并修复；切到 Codex 继续；`/stop` 能杀掉正在跑的测试；重启 wcode 后会话能接上 |
 | M2 媒体输入 | 图片和文件：CDN 下载后做 AES-128-ECB 解密，存到 `~/.wcode/media/`，把路径写进 prompt（Codex 用 `-i`，pi 用 `@path`） | 发一张截图，agent 能分析 |
-| M3 收尾 | 文件回传（`getuploadurl` 加密上传）；通过配置定义的纯文本 CLI agent；launchd；npm 发布（需加 tsc 构建，因为 Node 不对 node_modules 里的 .ts 做类型剥离） | 可以用 `npm i -g` 安装 |
+| M3 收尾 | 文件回传（`getuploadurl` 加密上传）；通过配置定义的纯文本 CLI agent；launchd；tsc 构建和 npm 打包（本次按用户确认暂不公开发布） | 可以用 `npm i -g /path/wcode-0.2.0.tgz` 安装 |
 
 不在当前范围、以后按需再加：
 
@@ -340,3 +343,30 @@ wcode/
 5. prompt 通过 stdin 传入时，三个 agent 是否都能正常工作，尤其是 pi 的 `--mode json`。
 
 另外，本机的 OpenClaw 已经登录了同一个微信 bot。运行 wcode 前需要先停掉 OpenClaw gateway，否则两边会争抢同一个消息游标。
+
+## 14. M2/M3 实施细化
+
+### 媒体输入
+
+- 图片项 `type:2/image_item`、文件项 `type:4/file_item`；owner 过滤完成后才下载，引用项若携带媒体信息也提取。游标仍先落盘，不改变至多一次执行语义。
+- 优先 `media.full_url`，否则拼接官方 `https://novac2c.cdn.weixin.qq.com/c2c/download?encrypted_query_param=…`。仅允许微信 HTTPS 域名，拒绝重定向，不向 CDN 附带 bot Authorization。
+- AES-128-ECB 使用 PKCS#7 填充。图片优先使用 `image_item.aeskey` 的 32 位 hex；`media.aes_key` 兼容 base64(raw16) 和 base64(hex32)。没有密钥的图片按明文处理；文件必须有密钥。有长度、MD5 时校验。
+- 流式读取响应并检查长度，单件上限 100 MiB、每轮最多 10 件、下载超时 120 秒。文件名去除路径与控制字符、限制 UTF-8 字节长度，随机前缀防覆盖，0600 落盘到 `media/inbound/`。
+- 下载属于可取消的当前任务；超时和 `/stop` 同时取消下载与 agent，不阻塞接收其他命令。附件失败则整轮报错，不让 agent 对缺失文件猜测。
+- 图片检测 PNG/JPEG/GIF/WebP 魔数。Claude 从 prompt 路径读取；Codex 新会话与 resume 都传 `-i`；pi 传 `@path`。其他文件只传路径。模型必须具备视觉能力，参数传入成功不等于模型识别正确。
+
+### 文件回传
+
+- 用户用 `/send 路径`，或让 agent 最终输出独立一行 `WCODE_FILE: /绝对路径`。仅解析代码块外的明确标记；每轮最多 3 件。
+- 上传前将普通文件复制为 `media/outbound/` 快照，记录文件名、长度、SHA-256，先持久化 outbox。重试时不会读取后来改变的源文件。
+- `getuploadurl` 传 `media_type:3`、`rawsize`、明文 MD5、PKCS#7 后密文长度、随机 `filekey` 和 hex AES key、`no_need_thumb:true`。优先 `upload_full_url`，否则使用 `upload_param` 拼 CDN URL。
+- CDN POST 发送 AES 密文，读取 `x-encrypted-param`。在 state 中保存已上传的媒体引用，再发 `type:4` 消息；`len` 为明文长度字符串，`aes_key` 按官方发送格式编码为 base64(hex32)。重试复用媒体引用和 client ID。
+- 沿用文本的独立发送队列与重试；网络失败保留 outbox，新 owner 消息触发补发。媒体目录暂不自动清理，避免删除仍被会话引用或待发送的文件。
+
+### 纯文本 CLI、后台服务与包
+
+- `agents.<name>.type: "text"` 配合 `command`、数组 `args`/`extraArgs` 定义 CLI，`{model}` 为可选模型占位符。stdin 输入 prompt，stdout 完整累积，stderr 用于错误，非零退出码失败。无自动会话恢复；共用取消、超时、队列、分页与回传。
+- agent 名称扩展为配置项列表，保留前三项 claude/codex/pi 的序号；旧 state 兼容，新 state 可保存自定义 agent 与文件 outbox。自定义 agent 从配置移除后给出切换提示。
+- macOS `service` 生成用户 LaunchAgent，记录绝对 Node/CLI 路径、PATH、WCODE_HOME、私有日志；按数据目录哈希隔离服务。真实加载验证用无网络临时进程，不安装真实 bot 后台服务。
+- `tsconfig.build.json` 使用 TypeScript 5.9 的 `rewriteRelativeImportExtensions`，产物为 `dist/*.js`，bin 指向 `dist/cli.js`。`npm pack` 执行测试与构建，包白名单只有 dist、文档与第三方声明。数据、测试、源码和私有凭据不打包。
+- 本次保留 `private:true` 并交付 `.tgz`；公开发布需要另选包名/scope、确认许可与发布权限。

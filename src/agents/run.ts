@@ -48,20 +48,28 @@ export async function run(spec: AgentSpec, o: RunOptions): Promise<string> {
   if (o.signal.aborted) stop();
   child.stdin.end(o.prompt);
   try {
-    for await (const line of createInterface({ input: child.stdout, crlfDelay: Infinity })) {
-      let obj: unknown;
-      try { obj = JSON.parse(line); } catch { continue; }
-      for (const event of spec.parseLine(obj)) {
-        if (event.type === 'text' && event.text.trim()) text = event.text;
-        if (event.type === 'error') failure = new Error(event.message);
-        o.onEvent(event);
+    if (spec.output === 'text') {
+      child.stdout.setEncoding('utf8');
+      for await (const chunk of child.stdout) {
+        text += chunk;
+        if (Buffer.byteLength(text) > 1_048_576) throw new Error('agent 文本输出超过 1 MiB');
+      }
+    } else {
+      for await (const line of createInterface({ input: child.stdout, crlfDelay: Infinity })) {
+        let obj: unknown;
+        try { obj = JSON.parse(line); } catch { continue; }
+        for (const event of spec.parseLine(obj)) {
+          if (event.type === 'text' && event.text.trim()) text = event.text;
+          if (event.type === 'error') failure = new Error(event.message);
+          o.onEvent(event);
+        }
       }
     }
     const code = await closed;
     if (escalation) await escalation; // The leader may exit while grandchildren survive with closed pipes.
     o.signal.throwIfAborted();
     if (failure) throw failure;
-    if (code !== 0 && !text) throw new Error(stderr.trim().split('\n').slice(-20).join('\n') || `${spec.name} 退出码 ${code}`);
+    if (code !== 0 && (!text || spec.output === 'text')) throw new Error(stderr.trim().split('\n').slice(-20).join('\n') || `${spec.name} 退出码 ${code}`);
     return text || '任务已结束，没有文本输出。';
   } catch (e) {
     if (!finished) stop();

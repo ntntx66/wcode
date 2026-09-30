@@ -3,6 +3,9 @@ import { randomBytes } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { record, VERSION } from '../config.ts';
 import type { Auth } from '../store.ts';
+import type { LocalFile } from '../files.ts';
+import { upload } from './media.ts';
+import type { FileItem } from './media.ts';
 
 export const BASE_URL = 'https://ilinkai.weixin.qq.com';
 export class IlinkError extends Error {
@@ -46,9 +49,16 @@ export class Ilink {
     catch (e) { if (!signal.aborted && e instanceof Error && ['TimeoutError', 'AbortError'].includes(e.name)) return {}; throw e; }
   }
   send(text: string, contextToken: string, id: string, signal?: AbortSignal): Promise<unknown> {
+    return this.sendItem({ type: 1, text_item: { text } }, contextToken, id, signal);
+  }
+  uploadFile(file: LocalFile, signal?: AbortSignal): Promise<FileItem> { return upload(file, this, signal); }
+  sendFile(item: FileItem, contextToken: string, id: string, signal?: AbortSignal): Promise<unknown> {
+    return this.sendItem(item, contextToken, id, signal);
+  }
+  private sendItem(item: object, contextToken: string, id: string, signal?: AbortSignal): Promise<unknown> {
     return this.request('sendmessage', { msg: {
       from_user_id: '', to_user_id: this.auth.ownerId, client_id: id, message_type: 2, message_state: 2,
-      context_token: contextToken, item_list: [{ type: 1, text_item: { text } }],
+      context_token: contextToken, item_list: [item],
     } }, signal);
   }
   async typing(contextToken: string, signal: AbortSignal): Promise<void> {

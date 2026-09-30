@@ -4,7 +4,7 @@ export const codex: AgentSpec = {
   name: 'codex', command: 'codex',
   args: o => ['exec', ...(o.sessionId ? ['resume'] : []), '--json', '--skip-git-repo-check',
     '--dangerously-bypass-approvals-and-sandbox', ...(o.model ? ['-m', o.model] : []),
-    ...(o.extraArgs ?? []), ...(o.sessionId ? [o.sessionId] : []), '-'],
+    ...(o.extraArgs ?? []), ...(o.images ?? []).flatMap(path => ['-i', path]), ...(o.sessionId ? [o.sessionId] : []), '-'],
   parseLine(value) {
     const o = record(value), item = record(o.item);
     if (o.type === 'thread.started' && typeof o.thread_id === 'string') return [{ type: 'session', id: o.thread_id }];

@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { Store } from './store.ts';
+import type { State, Store } from './store.ts';
 import type { Ilink } from './wechat/ilink.ts';
 import { expired } from './wechat/ilink.ts';
+import { returnedFiles, snapshotFile } from './files.ts';
+
+type ReplyChannel = Pick<Ilink, 'send'> & Partial<Pick<Ilink, 'uploadFile' | 'sendFile'>>;
 
 export function splitReply(raw: string, limit = 2_000): string[] {
   let text = raw.replace(/!\[[^\]]*\]\((?:[^()\n]|\([^()\n]*\))*\)/g, '')
@@ -24,27 +27,43 @@ export function splitReply(raw: string, limit = 2_000): string[] {
   return parts.map((part, i) => `（${i + 1}/${parts.length}）\n${part}`);
 }
 export class Replies {
-  store: Store; api: Pick<Ilink, 'send'>; signal: AbortSignal; onError: (e: unknown, fatal?: boolean) => void;
+  store: Store; api: ReplyChannel; signal: AbortSignal; onError: (e: unknown, fatal?: boolean) => void;
   pending?: Promise<void>; blocked = false; retryMs: number; generation = 0;
-  constructor(store: Store, api: Pick<Ilink, 'send'>, signal: AbortSignal, onError: (e: unknown, fatal?: boolean) => void, retryMs = 2_000) {
+  constructor(store: Store, api: ReplyChannel, signal: AbortSignal, onError: (e: unknown, fatal?: boolean) => void, retryMs = 2_000) {
     this.store = store; this.api = api; this.signal = signal; this.onError = onError; this.retryMs = retryMs;
   }
   clearPages(): void { this.store.state.pages = []; this.store.save(); }
-  result(text: string): void { this.store.state.pages = splitReply(text); this.more(); }
-  more(): void {
+  result(text: string, cwd?: string): void {
+    if (cwd) {
+      const result = returnedFiles(text), files = [];
+      text = result.text;
+      if (result.paths.length > 3) text += '\n❌ 每轮最多回传 3 个文件，超出的请用 /send。';
+      for (const path of result.paths.slice(0, 3)) {
+        try { files.push({ id: `wcode-${randomUUID()}`, text: '', file: snapshotFile(this.store.home, path, cwd) }); }
+        catch (e) { text += `\n❌ 文件回传：${String(e instanceof Error ? e.message : e).slice(0, 500)}`; }
+      }
+      this.store.state.pages = splitReply(text.trim() || `已生成 ${files.length} 个文件。`);
+      this.more(files);
+    } else { this.store.state.pages = splitReply(text); this.more(); }
+  }
+  file(path: string, cwd: string): void {
+    this.store.state.outbox.push({ id: `wcode-${randomUUID()}`, text: '', file: snapshotFile(this.store.home, path, cwd) });
+    this.store.save(); this.flush();
+  }
+  more(files: State['outbox'] = []): void {
     const state = this.store.state;
     if (!state.pages.length) { this.send('没有更多内容。'); return; }
     const page = state.pages.splice(0, 3);
     if (state.pages.length) page[page.length - 1] += `\n还有 ${state.pages.length} 段，发送 /more`;
-    this.enqueue(page);
+    this.enqueue(page, files);
   }
   send(text: string): void {
     const parts = splitReply(text);
     if (parts.length > 3) { this.store.state.pages = parts; this.more(); }
     else this.enqueue(parts);
   }
-  enqueue(texts: string[]): void {
-    this.store.state.outbox.push(...texts.map(text => ({ id: `wcode-${randomUUID()}`, text })));
+  enqueue(texts: string[], files: State['outbox'] = []): void {
+    this.store.state.outbox.push(...texts.map(text => ({ id: `wcode-${randomUUID()}`, text })), ...files);
     this.store.save(); this.flush();
   }
   resume(): void { this.generation++; this.blocked = false; this.flush(); }
@@ -64,7 +83,17 @@ export class Replies {
       const message = state.outbox[0];
       for (let attempt = 0; ; attempt++) {
         const generation = this.generation;
-        try { await this.api.send(message.text, state.contextToken, message.id, this.signal); break; }
+        try {
+          if (message.file) {
+            if (!this.api.uploadFile || !this.api.sendFile) throw new Error('当前通道不支持文件回传');
+            if (!message.item) {
+              message.item = await this.api.uploadFile(message.file, this.signal);
+              try { this.store.save(); } catch (e) { this.blocked = true; this.onError(e, true); return; }
+            }
+            await this.api.sendFile(message.item, state.contextToken, message.id, this.signal);
+          } else await this.api.send(message.text, state.contextToken, message.id, this.signal);
+          break;
+        }
         catch (e) {
           // An owner message may arrive while the final attempt is still in flight.
           if (!expired(e) && !this.signal.aborted && attempt === 3 && generation !== this.generation) { attempt = -1; continue; }

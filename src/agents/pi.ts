@@ -4,7 +4,7 @@ export const pi: AgentSpec = {
   name: 'pi', command: 'pi',
   args(o) {
     if (!o.sessionId) throw new Error('pi 需要预先生成 sessionId');
-    return ['--mode', 'json', '--session-id', o.sessionId, ...(o.model ? ['--model', o.model] : []), ...(o.extraArgs ?? [])];
+    return ['--mode', 'json', '--session-id', o.sessionId, ...(o.model ? ['--model', o.model] : []), ...(o.extraArgs ?? []), ...(o.images ?? []).map(path => `@${path}`)];
   },
   parseLine(value) {
     const o = record(value), message = record(o.message);

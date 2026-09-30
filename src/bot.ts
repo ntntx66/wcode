@@ -12,12 +12,20 @@ import type { Updates } from './wechat/ilink.ts';
 import { inbound } from './wechat/inbound.ts';
 import { Replies } from './reply.ts';
 import { command } from './commands.ts';
+import { isAgent } from './config.ts';
+import { textAgent } from './agents/text.ts';
+import type { Inbound } from './wechat/inbound.ts';
+import { download } from './wechat/media.ts';
+import type { Downloaded } from './wechat/media.ts';
+import { fileInstructions } from './files.ts';
 
-export type Channel = Pick<Ilink, 'updates' | 'send' | 'typing'>;
+export type Channel = Pick<Ilink, 'updates' | 'send' | 'typing'> & Partial<Pick<Ilink, 'uploadFile' | 'sendFile'>>;
 const preamble = '你的回复会发到微信，请简洁，先给结论，避免大段代码。\n\n';
 export class Bot {
   store: Store; config: Config; auth: Auth; api: Channel; replies: Replies;
-  controller = new AbortController(); queue: string[] = []; failure?: unknown;
+  controller = new AbortController(); queue: Inbound[] = []; failure?: unknown;
+  download = download;
+  fileReturns = true;
   active?: { started: number; tool?: string; controller: AbortController; done: Promise<void> };
   execute: typeof run; log: (text: string) => void;
   constructor(store: Store, config: Config, auth: Auth, api: Channel = new Ilink(auth), execute = run, log = console.error) {
@@ -43,24 +51,24 @@ export class Bot {
       if (!input) { this.log('忽略非 owner、非用户或群消息'); continue; }
       if (input.contextToken) { s.contextToken = input.contextToken; this.store.save(); this.replies.resume(); }
       if (command(input.commandText, this)) continue;
-      if (!input.text) { this.replies.send('目前支持文本和语音转写，图片与文件将在后续版本支持。'); continue; }
-      if (this.active) { this.queue.push(input.text); this.replies.send(`已排队（${this.queue.length} 条）。`); }
-      else this.startTurn(input.text);
+      if (!input.text && !input.attachments.length) { this.replies.send('支持文本、语音转写、图片和文件；此消息没有可处理内容。'); continue; }
+      if (this.active) { this.queue.push(input); this.replies.send(`已排队（${this.queue.length} 条）。`); }
+      else this.startTurn([input]);
     }
   }
-  startTurn(prompt: string): void {
+  startTurn(inputs: Inbound[]): void {
     this.replies.clearPages();
     const active = { started: Date.now(), controller: new AbortController(), done: Promise.resolve(), tool: undefined as string | undefined };
     this.active = active;
-    active.done = this.turn(prompt, active).catch(e => this.fail(e)).finally(() => {
+    active.done = this.turn(inputs, active).catch(e => this.fail(e)).finally(() => {
       this.active = undefined;
       if (!this.controller.signal.aborted && this.queue.length) {
-        const next = this.queue.splice(0).join('\n\n');
+        const next = this.queue.splice(0);
         try { this.startTurn(next); } catch (e) { this.fail(e); }
       }
     });
   }
-  async turn(prompt: string, active: NonNullable<Bot['active']>): Promise<void> {
+  async turn(inputs: Inbound[], active: NonNullable<Bot['active']>): Promise<void> {
     const s = this.store.state, { agent, cwd } = s, key = sessionKey(s), previous = s.sessions[key];
     if (agent === 'pi' && !previous) { s.sessions[key] = randomUUID(); this.store.save(); }
     const signal = AbortSignal.any([active.controller.signal, this.controller.signal]);
@@ -70,19 +78,32 @@ export class Bot {
       if (!this.controller.signal.aborted) this.log(`typing: ${e}`);
       if (expired(e)) this.fail(e);
     });
-    let response: string;
+    let response: string, succeeded = false;
     try {
-      response = await this.execute({ ...{ claude, codex, pi }[agent], command: this.config.agents[agent].command }, {
-        prompt: (!previous && this.config.mobilePreamble ? preamble : '') + prompt, cwd,
+      const attachments = inputs.flatMap(input => input.attachments), files: Downloaded[] = [];
+      if (attachments.length > 10) throw new Error('每轮最多接收 10 个附件，请分批发送');
+      for (const attachment of attachments) {
+        active.tool = '下载微信附件';
+        files.push(await this.download(attachment, this.store.home, signal));
+      }
+      let prompt = inputs.map(input => input.text).filter(Boolean).join('\n\n') || '请分析收到的附件。';
+      if (files.length) prompt += '\n\n[微信附件，已下载到本机]\n' + files.map(file => `${file.kind === 'image' ? '图片' : '文件'}：${JSON.stringify(file.path)}`).join('\n');
+      const config = this.config.agents[agent];
+      if (!config) throw new Error(`agent ${agent} 已移出配置，请用 /agent 切换`);
+      const spec = isAgent(agent) ? { ...{ claude, codex, pi }[agent], command: config.command } : textAgent(agent, config);
+      response = await this.execute(spec, {
+        prompt: (!previous && this.config.mobilePreamble ? preamble : '') + prompt + (this.fileReturns ? fileInstructions : ''), cwd,
+        images: files.filter(file => file.kind === 'image').map(file => file.path),
         sessionId: s.sessions[key], model: s.models[agent], extraArgs: this.config.agents[agent].extraArgs, signal,
         onEvent: event => {
           if (event.type === 'session') { s.sessions[key] = event.id; this.store.save(); }
           if (event.type === 'tool') active.tool = `${event.name}${event.detail ? `：${event.detail}` : ''}`;
         },
       });
+      succeeded = true;
     } catch (e) { response = `❌ ${agent}：${Array.from(String(e instanceof Error ? e.message : e)).slice(0, 500).join('')}`; }
     finally { clearTimeout(timeout); typing.abort(); await heartbeat; }
-    this.replies.result(response);
+    this.replies.result(response, this.fileReturns && succeeded ? cwd : undefined);
   }
   async start(signal?: AbortSignal): Promise<void> {
     const stop = () => { this.controller.abort(); this.stopTask(); };

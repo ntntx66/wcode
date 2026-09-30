@@ -1,0 +1,6 @@
+{"type":"session","version":3,"id":"11111111-1111-4111-8111-111111111111"}
+{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"This is a CLI protocol test. Use only your shell tool to run printf wcode-fixture-ok. Do not read or modify files and do not use any other tools. Remember the marker WCODE_SESSION_7392 and reply exactly WCODE_FIXTURE_OK."}]}}
+{"type":"message_end","message":{"role":"assistant","stopReason":"toolUse","content":[{"type":"toolCall","id":"call_c628d36a387a4625ae83ec7f","name":"bash","arguments":{"command":"printf wcode-fixture-ok"}}]}}
+{"type":"tool_execution_start","toolCallId":"call_c628d36a387a4625ae83ec7f","toolName":"bash","args":{"command":"printf wcode-fixture-ok"}}
+{"type":"message_end","message":{"role":"toolResult","content":[{"type":"text","text":"wcode-fixture-ok"}]}}
+{"type":"message_end","message":{"role":"assistant","stopReason":"stop","content":[{"type":"text","text":"WCODE_FIXTURE_OK"}]}}

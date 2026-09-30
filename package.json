@@ -1,0 +1,19 @@
+{
+  "name": "wcode",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Run local coding agents from WeChat",
+  "type": "module",
+  "bin": { "wcode": "src/cli.ts" },
+  "engines": { "node": ">=22.18.0" },
+  "scripts": {
+    "start": "node src/cli.ts start",
+    "login": "node src/cli.ts login",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test",
+    "smoke": "node scripts/smoke-agents.ts"
+  },
+  "dependencies": { "qrcode-terminal": "0.12.0" },
+  "devDependencies": { "@types/node": "22.18.6", "typescript": "5.9.3" }
+}

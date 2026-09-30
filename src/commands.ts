@@ -1,0 +1,56 @@
+import { directory, isAgent, names } from './config.ts';
+import type { Config } from './config.ts';
+import { sessionKey } from './store.ts';
+import type { Store } from './store.ts';
+import type { Replies } from './reply.ts';
+
+const aliases: Record<string, string> = {
+  '/help': 'help', '/帮助': 'help', '/status': 'status', '/状态': 'status', '/stop': 'stop', '/停止': 'stop',
+  '/new': 'new', '/新建': 'new', '/agent': 'agent', '/cd': 'cd', '/model': 'model', '/more': 'more', '/更多': 'more',
+};
+export type CommandHost = {
+  store: Store; config: Config; replies: Replies;
+  active?: { started: number; tool?: string }; queue: string[]; stopTask(): void;
+};
+export function command(text: string, bot: CommandHost): boolean {
+  const [, word, tail = ''] = text.trim().match(/^(\S+)(?:\s+([\s\S]*))?$/) ?? [];
+  const cmd = word && Object.hasOwn(aliases, word) ? aliases[word] : undefined;
+  if (!cmd) return false;
+  const arg = tail.trim(), { store, config, replies } = bot, s = store.state;
+  const say = (text: string) => replies.send(text);
+  if (bot.active && (cmd === 'new' || (['agent', 'cd', 'model'].includes(cmd) && arg))) {
+    say('任务正在运行，请先 /stop，等停止后再切换。'); return true;
+  }
+  try {
+    switch (cmd) {
+      case 'help': say('/help /帮助：命令列表\n/status /状态：查看状态\n/stop /停止：停止并清空队列\n/new /新建：重开当前会话\n/agent [名称|序号]：查看或切换 agent\n/cd [别名|序号|绝对路径]：查看或切换目录\n/model [名称|default]：查看或设置模型\n/more /更多：下一页\n发送失败的结果已保存，发任意新消息可触发补发。'); break;
+      case 'status': say([
+        `Agent：${s.agent} · 模型：${s.models[s.agent] ?? 'default'}`, `目录：${s.cwd}`,
+        `会话：${s.sessions[sessionKey(s)] ?? '新会话'}`,
+        bot.active ? `运行：${Math.floor((Date.now() - bot.active.started) / 1000)} 秒 · 工具：${bot.active.tool ?? '暂无'}` : '状态：空闲',
+        `排队：${bot.queue.length} · 待补发：${s.outbox.length} · 下一页：${s.pages.length} 段`,
+      ].join('\n')); break;
+      case 'stop': { const running = !!bot.active; bot.stopTask(); say(running ? '正在停止任务，队列已清空。' : '当前无运行任务，队列已清空。'); break; }
+      case 'new': delete s.sessions[sessionKey(s)]; replies.clearPages(); say('已新建当前 agent + 目录的会话。'); break;
+      case 'agent': {
+        if (!arg) { say(names.map((n, i) => `${i + 1}. ${n}${n === s.agent ? '（当前）' : ''}`).join('\n')); break; }
+        const name = /^[1-3]$/.test(arg) ? names[Number(arg) - 1] : arg;
+        if (!isAgent(name)) throw new Error('可选 agent：claude、codex、pi（1、2、3）');
+        s.agent = name; replies.clearPages(); say(`已切换到 ${name}，${s.sessions[sessionKey(s)] ? '将续接已有会话' : '下轮新建会话'}。`); break;
+      }
+      case 'cd': {
+        const entries = Object.entries(config.projects);
+        if (!arg) { say(`当前目录：${s.cwd}\n` + (entries.map(([name, path], i) => `${i + 1}. ${name}：${path}`).join('\n') || '未配置项目，可直接 /cd /绝对路径')); break; }
+        const path = Object.hasOwn(config.projects, arg) ? config.projects[arg] : /^\d+$/.test(arg) ? entries[Number(arg) - 1]?.[1] : arg;
+        if (!path) throw new Error('项目序号不存在');
+        s.cwd = directory(path); replies.clearPages(); say(`目录：${s.cwd}\n${s.sessions[sessionKey(s)] ? '将续接此项目的会话。' : '下轮新建会话。'}`); break;
+      }
+      case 'model':
+        if (!arg) { say(`模型：${s.models[s.agent] ?? 'default'}`); break; }
+        if (arg === 'default') delete s.models[s.agent]; else s.models[s.agent] = arg;
+        store.save(); say(`模型：${s.models[s.agent] ?? 'default'}`); break;
+      case 'more': replies.more(); break;
+    }
+  } catch (e) { say(`❌ ${String(e instanceof Error ? e.message : e).slice(0, 500)}`); }
+  return true;
+}

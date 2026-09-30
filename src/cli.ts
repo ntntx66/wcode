@@ -1,0 +1,45 @@
+#!/usr/bin/env node
+import { join } from 'node:path';
+import { dataDir, directory, loadConfig, record, VERSION } from './config.ts';
+import { acquireLock, initialState, readJson, Store, writeJson } from './store.ts';
+import type { Auth } from './store.ts';
+import { trustedBase } from './wechat/ilink.ts';
+import { login } from './wechat/login.ts';
+import { Bot } from './bot.ts';
+
+async function main(): Promise<void> {
+  const [action, ...args] = process.argv.slice(2);
+  if (action === '--version') { console.log(VERSION); return; }
+  if (!action || action === '--help' || action === '-h') {
+    console.log('wcode login          扫码登录\nwcode start          启动 coding bot\nwcode start --echo   协议验证：只回声，不运行 agent\n数据目录：~/.wcode（可用 WCODE_HOME 覆盖）'); return;
+  }
+  if (!['login', 'start'].includes(action) || (args.length && !(action === 'start' && args.length === 1 && args[0] === '--echo')))
+    throw new Error('用法：wcode login | start [--echo]');
+  if (process.platform === 'win32') throw new Error('当前版本需要 macOS/Linux 的 POSIX 进程组');
+  const home = dataDir(), release = acquireLock(home), controller = new AbortController();
+  const stop = () => controller.abort();
+  process.on('SIGINT', stop); process.on('SIGTERM', stop);
+  try {
+    const config = loadConfig(home), authPath = join(home, 'auth.json');
+    const defaults = initialState(config.defaultAgent, Object.values(config.projects)[0] ?? directory(process.cwd()));
+    if (action === 'login') {
+      const old = record(readJson(authPath, {})), auth = await login(controller.signal);
+      const store = new Store(home, defaults);
+      if (old.ownerId !== auth.ownerId || old.botId !== auth.botId) store.state = defaults;
+      store.state.contextToken = ''; store.save();
+      writeJson(authPath, auth); console.log('登录成功。请先停止使用同一 bot 的 OpenClaw gateway，再运行 wcode start。');
+    } else {
+      const value = record(readJson(authPath, {}));
+      if (['token', 'baseUrl', 'botId', 'ownerId'].some(k => typeof value[k] !== 'string' || !value[k])) throw new Error('请先运行 wcode login');
+      const auth = value as Auth; trustedBase(auth.baseUrl);
+      const store = new Store(home, defaults); store.state.cwd = directory(store.state.cwd);
+      const bot = new Bot(store, config, auth);
+      if (args[0] === '--echo') bot.execute = async (_spec, o) => o.prompt;
+      if (args[0] === '--echo') config.mobilePreamble = false;
+      console.log(`wcode ${VERSION} 已启动${args[0] === '--echo' ? '（回声模式）' : ''}，Ctrl-C 退出。`);
+      await bot.start(controller.signal);
+    }
+  } catch (e) { if (!controller.signal.aborted) throw e; }
+  finally { process.off('SIGINT', stop); process.off('SIGTERM', stop); release(); }
+}
+main().catch(e => { console.error(e instanceof Error ? e.message : e); process.exitCode = 1; });

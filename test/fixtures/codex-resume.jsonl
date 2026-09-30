@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"WCODE_SESSION_7392"}}
+{"type":"turn.completed","usage":{"input_tokens":51548,"cached_input_tokens":37888,"cache_write_input_tokens":0,"output_tokens":160,"reasoning_output_tokens":87}}

@@ -2,9 +2,10 @@ import { detail, record } from './types.ts';
 import type { AgentSpec } from './types.ts';
 export const codex: AgentSpec = {
   name: 'codex', command: 'codex',
+  // developer_instructions is fixed when a thread is created; resume ignores later values.
   args: o => ['exec', ...(o.sessionId ? ['resume'] : []), '--json', '--skip-git-repo-check',
     '--dangerously-bypass-approvals-and-sandbox', ...(o.model ? ['-m', o.model] : []),
-    ...(o.extraArgs ?? []), ...(o.images ?? []).flatMap(path => ['-i', path]), ...(o.sessionId ? [o.sessionId] : []), '-'],
+    ...(o.system ? ['-c', `developer_instructions=${JSON.stringify(o.system)}`] : []), ...(o.extraArgs ?? []), ...(o.images ?? []).flatMap(path => ['-i', path]), ...(o.sessionId ? [o.sessionId] : []), '-'],
   parseLine(value) {
     const o = record(value), item = record(o.item);
     if (o.type === 'thread.started' && typeof o.thread_id === 'string') return [{ type: 'session', id: o.thread_id }];

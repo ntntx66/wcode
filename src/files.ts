@@ -37,7 +37,7 @@ export function snapshotFile(home: string, path: string, cwd: string): LocalFile
   path = resolve(cwd, path.startsWith('~/') ? join(homedir(), path.slice(2)) : path);
   return saveMedia(home, 'outbound', basename(path), readLocalFile(path));
 }
-export const fileInstructions = '\n\n[微信文件回传]\n仅当用户需要接收文件时，在最终回复单独写一行 WCODE_FILE: /文件的绝对路径（不加引号，最多 3 个文件，每个不超过 100 MiB）。不要将文件内容编码到回复中。';
+export const fileInstructions = '仅当用户需要接收文件时，在最终回复单独写一行 WCODE_FILE: /文件的绝对路径（不加引号，最多 3 个文件，每个不超过 100 MiB）。不要将文件内容编码到回复中。';
 export function returnedFiles(text: string): { text: string; paths: string[] } {
   const paths: string[] = [], lines: string[] = [];
   let fence = false;

@@ -3,7 +3,8 @@ import type { AgentEvent, AgentSpec } from './types.ts';
 export const claude: AgentSpec = {
   name: 'claude', command: 'claude',
   args: o => ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions',
-    ...(o.sessionId ? ['--resume', o.sessionId] : []), ...(o.model ? ['--model', o.model] : []), ...(o.extraArgs ?? [])],
+    ...(o.sessionId ? ['--resume', o.sessionId] : []), ...(o.model ? ['--model', o.model] : []),
+    ...(o.system ? ['--append-system-prompt', o.system] : []), ...(o.extraArgs ?? [])],
   parseLine(value) {
     const o = record(value), events: AgentEvent[] = [];
     if (o.type === 'system' && o.subtype === 'init' && typeof o.session_id === 'string') events.push({ type: 'session', id: o.session_id });

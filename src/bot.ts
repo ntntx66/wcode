@@ -20,12 +20,11 @@ import type { Downloaded } from './wechat/media.ts';
 import { fileInstructions } from './files.ts';
 
 export type Channel = Pick<Ilink, 'updates' | 'send' | 'typing'> & Partial<Pick<Ilink, 'uploadFile' | 'sendFile'>>;
-const preamble = '你的回复会发到微信，请简洁，先给结论，避免大段代码。\n\n';
+const preamble = '你的回复会发到微信，请简洁，先给结论，避免大段代码。';
 export class Bot {
   store: Store; config: Config; auth: Auth; api: Channel; replies: Replies;
   controller = new AbortController(); queue: Inbound[] = []; failure?: unknown;
   download = download;
-  fileReturns = true;
   active?: { started: number; tool?: string; controller: AbortController; done: Promise<void> };
   execute: typeof run; log: (text: string) => void;
   constructor(store: Store, config: Config, auth: Auth, api: Channel = new Ilink(auth), execute = run, log = console.error) {
@@ -92,7 +91,7 @@ export class Bot {
       if (!config) throw new Error(`agent ${agent} 已移出配置，请用 /agent 切换`);
       const spec = isAgent(agent) ? { ...{ claude, codex, pi }[agent], command: config.command } : textAgent(agent, config);
       response = await this.execute(spec, {
-        prompt: (!previous && this.config.mobilePreamble ? preamble : '') + prompt + (this.fileReturns ? fileInstructions : ''), cwd,
+        prompt, system: '[微信通道]\n' + (this.config.mobilePreamble ? preamble + '\n' : '') + fileInstructions, cwd,
         images: files.filter(file => file.kind === 'image').map(file => file.path),
         sessionId: s.sessions[key], model: s.models[agent], extraArgs: this.config.agents[agent].extraArgs, signal,
         onEvent: event => {
@@ -103,7 +102,7 @@ export class Bot {
       succeeded = true;
     } catch (e) { response = `❌ ${agent}：${Array.from(String(e instanceof Error ? e.message : e)).slice(0, 500).join('')}`; }
     finally { clearTimeout(timeout); typing.abort(); await heartbeat; }
-    this.replies.result(response, this.fileReturns && succeeded ? cwd : undefined);
+    this.replies.result(response, succeeded ? cwd : undefined);
   }
   async start(signal?: AbortSignal): Promise<void> {
     const stop = () => { this.controller.abort(); this.stopTask(); };

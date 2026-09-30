@@ -19,7 +19,7 @@ test('configured text CLI executes literal stdin, returns all stdout and reports
   writeJson(join(home, 'config.json'), { defaultAgent: 'local', agents: { local: { type: 'text', command: process.execPath, args: ['-e', 'process.stdin.pipe(process.stdout)', '{model}'] } } });
   const config = loadConfig(home), spec = textAgent('local', config.agents.local);
   const prompt = '-x $(touch unwanted)\n中文\nlast line';
-  assert.equal(await run(spec, { prompt, model: 'literal-model', cwd: home, signal: new AbortController().signal, onEvent: () => assert.fail('text CLI should not emit structured events') }), prompt);
+  assert.equal(await run(spec, { prompt, system: 'SYS', model: 'literal-model', cwd: home, signal: new AbortController().signal, onEvent: () => assert.fail('text CLI should not emit structured events') }), 'SYS\n\n' + prompt);
   const fail = textAgent('bad', { command: process.execPath, extraArgs: [], args: ['-e', 'console.log("partial");console.error("failed");process.exitCode=2'] });
   await assert.rejects(run(fail, { prompt: '', cwd: home, signal: new AbortController().signal, onEvent: () => assert.fail('text CLI should not emit structured events') }), /failed/);
   const store = new Store(home, initialState('local', home)); store.save();

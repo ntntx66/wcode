@@ -46,7 +46,7 @@ export async function run(spec: AgentSpec, o: RunOptions): Promise<string> {
   child.stdin.on('error', e => { if ((e as NodeJS.ErrnoException).code !== 'EPIPE') failure = e; });
   o.signal.addEventListener('abort', stop, { once: true });
   if (o.signal.aborted) stop();
-  child.stdin.end(o.prompt);
+  child.stdin.end(spec.output === 'text' && o.system ? `${o.system}\n\n${o.prompt}` : o.prompt); // Text CLIs have no system prompt channel.
   try {
     if (spec.output === 'text') {
       child.stdout.setEncoding('utf8');

@@ -155,13 +155,14 @@ export type AgentEvent =
 | 续会话 | 加 `--resume <id>` | `codex exec resume --json --skip-git-repo-check <id> -` | 与新会话相同，传同一个 uuid |
 | yolo | `--dangerously-skip-permissions` | `--dangerously-bypass-approvals-and-sandbox` | 不需要，pi 没有权限系统 |
 | 指定模型 | `--model` | `-m` | `--model` |
+| 通道说明 | `--append-system-prompt` | `-c developer_instructions=...`（仅新会话写入） | `--append-system-prompt` |
 | 会话 ID 来源 | `system/init` 事件的 `session_id` | `thread.started` 事件的 `thread_id` | wcode 生成 uuid 传入 |
 | 工具活动 | assistant 消息里的 `tool_use` | `item.started`（`command_execution` 等） | `tool_execution_start` |
 | 最终文本 | `result` 事件的 `result` | 最后一个 `agent_message` item | 最后一条 assistant `message_end` 里的文本块 |
 
 每个 agent 都可以在配置里追加 `extraArgs`，例如给 pi 加 `-a` 以信任项目本地配置。注意 `codex exec resume` 不接受 `--sandbox`、`-C` 这类参数（已对照本机 `--help`），Codex 的配置覆盖统一用 `-c key=value`；工作目录一律通过子进程的 cwd 传递。
 
-每个会话的第一轮，会在 prompt 前加一句固定说明："你的回复会发到微信，请简洁，先给结论，避免大段代码。" 从源头控制长度，比事后截断有效。可以在配置里关掉。
+微信通道的固定约定作为 system prompt 每轮传入，不写进用户消息：一句"你的回复会发到微信，请简洁，先给结论，避免大段代码。"（从源头控制长度，比事后截断有效，可用 `mobilePreamble` 关掉），加上 `WCODE_FILE` 回传说明。这样会话历史里只有用户原话，上下文压缩也不会丢掉约定。Codex 的 `developer_instructions` 在建线程时固定，修改文案后需 `/new` 才对旧会话生效；自定义文本 CLI 没有 system 通道，拼在 stdin 开头。
 
 ## 7. 会话与命令
 

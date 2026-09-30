@@ -38,8 +38,6 @@ async function main(): Promise<void> {
       const store = new Store(home, defaults); store.state.cwd = directory(store.state.cwd);
       const bot = new Bot(store, config, auth);
       if (args[0] === '--echo') bot.execute = async (_spec, o) => o.prompt;
-      if (args[0] === '--echo') config.mobilePreamble = false;
-      if (args[0] === '--echo') bot.fileReturns = false;
       console.log(`wcode ${VERSION} 已启动${args[0] === '--echo' ? '（回声模式）' : ''}，Ctrl-C 退出。`);
       await bot.start(controller.signal);
     }

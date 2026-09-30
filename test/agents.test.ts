@@ -20,8 +20,10 @@ for (const spec of [claude, codex, pi]) {
     }
     for (const malformed of [null, [], 42, 'noise', { type: 'assistant', message: null }, { type: 'message_end' }])
       assert.doesNotThrow(() => spec.parseLine(malformed));
-    const args = spec.args({ sessionId: 'session-id', model: 'custom-model', extraArgs: ['--test-option'] });
+    const system = '通道 "规则"\n第二行', args = spec.args({ sessionId: 'session-id', model: 'custom-model', extraArgs: ['--test-option'], system });
     assert.ok(args.includes('session-id')); assert.ok(args.includes('custom-model')); assert.ok(args.includes('--test-option'));
+    assert.ok(args.includes(spec === codex ? 'developer_instructions="通道 \\"规则\\"\\n第二行"' : system));
+    assert.ok(!spec.args({ sessionId: 'session-id' }).some(arg => /system-prompt|developer_instructions/.test(arg)));
     if (spec === codex) { assert.equal(args.at(-1), '-'); assert.ok(!args.includes('-C')); assert.ok(!args.includes('--sandbox')); }
   });
 }

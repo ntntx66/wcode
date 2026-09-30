@@ -26,17 +26,18 @@ test('cursor is durable before execution; duplicate cursor, strangers and failed
   assert.throws(() => bot.accept({ get_updates_buf: 'c2', msgs: [message('unsafe')] }), /disk full/);
   assert.equal(runs, 1); bot.controller.abort(); await bot.replies.pending;
 });
-test('queued messages merge once; sessions persist immediately and preamble appears only in the first turn', async t => {
+test('queued messages merge once; sessions persist immediately and channel rules stay in the system prompt every turn', async t => {
   const { home, store, config } = setup(t), calls: RunOptions[] = [], finish: ((text: string) => void)[] = [];
   const bot = new Bot(store, config, auth, channel(), async (_spec, o) => {
     calls.push(o); o.onEvent({ type: 'session', id: 'persisted-session' });
     return new Promise(resolve => finish.push(resolve));
   }, () => {});
   bot.accept({ get_updates_buf: '1', msgs: [message('one'), message('two'), message('three')] });
-  assert.equal(calls.length, 1); assert.equal(bot.queue.length, 2); assert.match(calls[0].prompt, /^你的回复会发到微信/);
+  assert.equal(calls.length, 1); assert.equal(bot.queue.length, 2); assert.equal(calls[0].prompt, 'one');
+  assert.match(calls[0].system ?? '', /^\[微信通道\]\n你的回复会发到微信/); assert.ok(calls[0].system?.endsWith(fileInstructions));
   assert.equal(new Store(home, initialState('pi', home)).state.sessions[`claude:${home}`], 'persisted-session');
   finish[0]('first result'); await eventually(() => calls.length === 2);
-  assert.equal(calls[1].prompt, 'two\n\nthree' + fileInstructions); assert.equal(calls[1].sessionId, 'persisted-session');
+  assert.equal(calls[1].prompt, 'two\n\nthree'); assert.equal(calls[1].system, calls[0].system); assert.equal(calls[1].sessionId, 'persisted-session');
   finish[1]('second result'); await eventually(() => !bot.active && !bot.replies.pending);
 });
 test('commands stay responsive while sends are blocked; stop clears queue and prevents switches until exit', async t => {
@@ -68,7 +69,7 @@ test('exact command matching, aliases, model reset, project session reuse and /n
   send('/agent 1'); send('/new'); assert.equal(store.state.sessions[`claude:${home}`], undefined);
   send('/agent 2'); assert.equal(store.state.sessions[`codex:${home}`], 'codex-session');
   for (const text of ['/Users/me/a.ts 这里有 bug', '/statusXYZ', '1']) { send(text); await bot.active?.done; }
-  assert.deepEqual(prompts, ['/Users/me/a.ts 这里有 bug', '/statusXYZ', '1'].map(text => text + fileInstructions));
+  assert.deepEqual(prompts, ['/Users/me/a.ts 这里有 bug', '/statusXYZ', '1']);
   send('/帮助'); send('/状态'); send('/更多');
   await eventually(() => !bot.replies.pending);
 });
@@ -102,7 +103,7 @@ test('HTTP iLink → stdin child → final WeChat reply works end to end and res
   const execute: typeof run = (spec, options) => run({ ...spec, command: process.execPath, args: () => ['-e', `
     let prompt='';process.stdin.setEncoding('utf8');process.stdin.on('data',s=>prompt+=s);process.stdin.on('end',()=>{
     console.log(JSON.stringify({type:'thread.started',thread_id:'http-session'}));
-    console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'result:'+prompt.split('\\n')[2]}}));});`], parseLine: codex.parseLine }, options);
+    console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'result:'+prompt}}));});`], parseLine: codex.parseLine }, options);
   const controller = new AbortController(), bot = new Bot(store, config, auth, new Ilink(localAuth), execute, () => {});
   const running = bot.start(controller.signal);
   t.after(async () => { controller.abort(); await running; });
@@ -114,6 +115,6 @@ test('HTTP iLink → stdin child → final WeChat reply works end to end and res
   const restored = new Store(home, initialState('claude', home)); let resumed: RunOptions | undefined;
   const second = new Bot(restored, config, auth, channel(), async (_spec, o) => { resumed = o; return 'continued'; }, () => {});
   second.accept({ get_updates_buf: '3', msgs: [message('continue')] }); await second.active?.done;
-  assert.equal(resumed?.sessionId, 'http-session'); assert.equal(resumed?.prompt, 'continue' + fileInstructions);
+  assert.equal(resumed?.sessionId, 'http-session'); assert.equal(resumed?.prompt, 'continue');
   await eventually(() => !second.replies.pending);
 });

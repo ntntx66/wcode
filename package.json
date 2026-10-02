@@ -1,6 +1,6 @@
 {
   "name": "wcode",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "license": "UNLICENSED",
   "description": "Run local coding agents from WeChat",
@@ -17,6 +17,7 @@
     "prepack": "npm run check && npm run build",
     "check": "npm run typecheck && npm test",
     "smoke": "node scripts/smoke-agents.ts",
+    "smoke:progress": "node scripts/smoke-progress.ts",
     "smoke:media": "node scripts/smoke-media.ts",
     "smoke:service": "node scripts/smoke-service.ts"
   },

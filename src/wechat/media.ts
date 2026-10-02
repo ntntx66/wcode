@@ -1,7 +1,7 @@
 // Protocol adapted from @tencent-weixin/openclaw-weixin 2.4.9 (MIT).
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { record } from '../config.ts';
-import { digest, MAX_MEDIA_BYTES, readLocalFile, saveMedia } from '../files.ts';
+import { MAX_MEDIA_BYTES, readSnapshot, saveMedia } from '../files.ts';
 import type { LocalFile } from '../files.ts';
 import type { Ilink } from './ilink.ts';
 
@@ -76,8 +76,7 @@ export async function download(attachment: Attachment, home: string, signal: Abo
 }
 export async function upload(file: LocalFile, api: Pick<Ilink, 'request' | 'auth' | 'fetcher'>, signal?: AbortSignal): Promise<FileItem> {
   signal?.throwIfAborted();
-  const data = readLocalFile(file.path);
-  if (data.length !== file.size || digest(data) !== file.sha256) throw new Error('待发送文件快照已改变');
+  const data = readSnapshot(file);
   const key = randomBytes(16), filekey = randomBytes(16).toString('hex');
   const cipher = createCipheriv('aes-128-ecb', key, null), ciphertext = Buffer.concat([cipher.update(data), cipher.final()]);
   const result = await api.request<{ upload_full_url?: string; upload_param?: string }>('getuploadurl', {

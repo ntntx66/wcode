@@ -1,0 +1,6 @@
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"我将依次执行两个只读命令，并在两次工具调用之间说明进度。\n"}}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc pwd","status":"in_progress","exit_code":null}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"第一个命令已完成，当前目录路径已确认；接下来执行第二个命令。\n"}}
+{"type":"item.started","item":{"id":"item_3","type":"command_execution","command":"/bin/zsh -lc 'printf probe-two'","status":"in_progress","exit_code":null}}
+{"type":"item.completed","item":{"id":"item_4","type":"agent_message","text":"FINAL: 两个命令都已完成。"}}
+{"type":"turn.completed"}

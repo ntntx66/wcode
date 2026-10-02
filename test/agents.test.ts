@@ -16,7 +16,8 @@ for (const spec of [claude, codex, pi]) {
       const events = lines.flatMap(line => spec.parseLine(JSON.parse(line)));
       assert.ok(events.some(e => e.type === 'session'));
       if (turn === 'new') assert.ok(events.some(e => e.type === 'tool'));
-      assert.deepEqual(events.filter(e => e.type === 'text').at(-1), { type: 'text', text: turn === 'new' ? 'WCODE_FIXTURE_OK' : 'WCODE_SESSION_7392' });
+      const text = events.filter(e => e.type === 'text').at(-1);
+      assert.equal(text?.text, turn === 'new' ? 'WCODE_FIXTURE_OK' : 'WCODE_SESSION_7392');
     }
     for (const malformed of [null, [], 42, 'noise', { type: 'assistant', message: null }, { type: 'message_end' }])
       assert.doesNotThrow(() => spec.parseLine(malformed));

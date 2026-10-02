@@ -4,6 +4,7 @@ import { Ilink, IlinkError, trustedBase } from '../src/wechat/ilink.ts';
 import { inbound } from '../src/wechat/inbound.ts';
 import { login } from '../src/wechat/login.ts';
 import { auth, eventually, message } from './helpers.ts';
+import { VERSION } from '../src/config.ts';
 
 test('owner filtering, text/voice/quote extraction and command text isolation', () => {
   for (const bad of [{ ...message('x'), from_user_id: 'other' }, { ...message('x'), message_type: 2 }, { ...message('x'), group_id: 'group' }, null])
@@ -26,9 +27,11 @@ test('iLink wire headers, metadata, envelope, return codes, HTTP errors and canc
   const { url, init } = requests[0], headers = new Headers(init.headers), body = JSON.parse(String(init.body));
   assert.ok(url.endsWith('/ilink/bot/sendmessage')); assert.equal(init.method, 'POST'); assert.equal(init.redirect, 'error');
   assert.equal(headers.get('Authorization'), 'Bearer test-token'); assert.equal(headers.get('AuthorizationType'), 'ilink_bot_token');
-  assert.equal(headers.get('iLink-App-Id'), 'bot'); assert.equal(headers.get('iLink-App-ClientVersion'), '512');
+  assert.equal(headers.get('iLink-App-Id'), 'bot');
+  const [major, minor, patch] = VERSION.split('.').map(Number);
+  assert.equal(headers.get('iLink-App-ClientVersion'), String((major << 16) | (minor << 8) | patch));
   const uin = Buffer.from(headers.get('X-WECHAT-UIN')!, 'base64').toString(); assert.match(uin, /^\d+$/); assert.ok(Number(uin) <= 0xffffffff);
-  assert.equal(body.base_info.bot_agent, 'wcode/0.2.0'); assert.equal(body.msg.to_user_id, 'owner');
+  assert.equal(body.base_info.bot_agent, `wcode/${VERSION}`); assert.equal(body.msg.to_user_id, 'owner');
   assert.equal(body.msg.context_token, 'latest-context'); assert.equal(body.msg.client_id, 'stable-client-id');
   assert.equal(body.msg.message_type, 2); assert.equal(body.msg.message_state, 2);
   assert.deepEqual(body.msg.item_list, [{ type: 1, text_item: { text: 'hello\n世界' } }]);

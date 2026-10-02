@@ -1,0 +1,5 @@
+{"type":"message_end","message":{"role":"assistant","model":"glm-5.3","stopReason":"toolUse","content":[{"type":"text","text":"接下来我将执行第一个命令 pwd，查看当前工作目录。"},{"type":"toolCall","id":"call_9634e557875d4989bedee9c4","name":"bash","arguments":{"command":"pwd"}}]}}
+{"type":"tool_execution_start","toolName":"bash","toolCallId":"call_9634e557875d4989bedee9c4"}
+{"type":"message_end","message":{"role":"assistant","model":"glm-5.3","stopReason":"toolUse","content":[{"type":"text","text":"第一个命令已完成，成功获取当前目录；现在执行第二个命令 printf probe-two。"},{"type":"toolCall","id":"call_6fe03d50d20a43c995427ca5","name":"bash","arguments":{"command":"printf probe-two"}}]}}
+{"type":"tool_execution_start","toolName":"bash","toolCallId":"call_6fe03d50d20a43c995427ca5"}
+{"type":"message_end","message":{"role":"assistant","model":"glm-5.3","stopReason":"stop","content":[{"type":"text","text":"FINAL: 两个命令都已完成。"}]}}

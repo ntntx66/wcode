@@ -33,6 +33,11 @@ export function readLocalFile(path: string): Buffer {
     return data.subarray(0, size);
   } finally { closeSync(fd); }
 }
+export function readSnapshot(file: LocalFile): Buffer {
+  const data = readLocalFile(file.path);
+  if (data.length !== file.size || digest(data) !== file.sha256) throw new Error(`文件快照已改变：${file.name}`);
+  return data;
+}
 export function snapshotFile(home: string, path: string, cwd: string): LocalFile {
   path = resolve(cwd, path.startsWith('~/') ? join(homedir(), path.slice(2)) : path);
   return saveMedia(home, 'outbound', basename(path), readLocalFile(path));

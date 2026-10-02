@@ -6,6 +6,7 @@ import { expired } from './wechat/ilink.ts';
 import { returnedFiles, snapshotFile } from './files.ts';
 
 type ReplyChannel = Pick<Ilink, 'send'> & Partial<Pick<Ilink, 'uploadFile' | 'sendFile'>>;
+export type LiveText = { parts: { id: string; text: string; sent: boolean }[]; done: Promise<void> };
 
 export function splitReply(raw: string, limit = 2_000): string[] {
   let text = raw.replace(/!\[[^\]]*\]\((?:[^()\n]|\([^()\n]*\))*\)/g, '')
@@ -29,26 +30,39 @@ export function splitReply(raw: string, limit = 2_000): string[] {
 export class Replies {
   store: Store; api: ReplyChannel; signal: AbortSignal; onError: (e: unknown, fatal?: boolean) => void;
   pending?: Promise<void>; blocked = false; retryMs: number; generation = 0;
+  private liveQueue: { live: LiveText; signal: AbortSignal; resolve: () => void }[] = [];
+  private sendingLive?: AbortController;
   constructor(store: Store, api: ReplyChannel, signal: AbortSignal, onError: (e: unknown, fatal?: boolean) => void, retryMs = 2_000) {
     this.store = store; this.api = api; this.signal = signal; this.onError = onError; this.retryMs = retryMs;
   }
   clearPages(): void { this.store.state.pages = []; this.store.save(); }
-  result(text: string, cwd?: string): void {
+  result(text: string, cwd?: string, live?: LiveText): void {
+    const files: State['outbox'] = [], notices: string[] = [];
     if (cwd) {
-      const result = returnedFiles(text), files = [];
+      const result = returnedFiles(text);
       text = result.text;
-      if (result.paths.length > 3) text += '\n❌ 每轮最多回传 3 个文件，超出的请用 /send。';
+      if (result.paths.length > 3) notices.push('❌ 每轮最多回传 3 个文件，超出的请用 /send。');
       for (const path of result.paths.slice(0, 3)) {
         try { files.push({ id: `wcode-${randomUUID()}`, text: '', file: snapshotFile(this.store.home, path, cwd) }); }
-        catch (e) { text += `\n❌ 文件回传：${String(e instanceof Error ? e.message : e).slice(0, 500)}`; }
+        catch (e) { notices.push(`❌ 文件回传：${String(e instanceof Error ? e.message : e).slice(0, 500)}`); }
       }
-      this.store.state.pages = splitReply(text.trim() || `已生成 ${files.length} 个文件。`);
-      this.more(files);
-    } else { this.store.state.pages = splitReply(text); this.more(); }
+      text = text.trim() || `已生成 ${files.length} 个文件。`;
+    }
+    const parts = splitReply(live ? text : [text, ...notices].join('\n'));
+    if (live) {
+      // Reuse acknowledgements and IDs from direct delivery, including a partially sent long answer.
+      const missing = parts.flatMap((text, i) => {
+        const previous = live.parts[i];
+        if (previous?.text === text && previous.sent) return [];
+        return [{ id: previous?.text === text ? previous.id : `wcode-${randomUUID()}`, text }];
+      });
+      const warnings = notices.flatMap(text => splitReply(text).map(text => ({ id: `wcode-${randomUUID()}`, text })));
+      this.store.state.pages = []; this.enqueue([], [...missing, ...warnings, ...files], false);
+    } else { this.store.state.pages = parts; this.more(files); }
   }
   file(path: string, cwd: string): void {
     this.store.state.outbox.push({ id: `wcode-${randomUUID()}`, text: '', file: snapshotFile(this.store.home, path, cwd) });
-    this.store.save(); this.flush();
+    this.store.save(); this.preemptLive(); this.flush();
   }
   more(files: State['outbox'] = []): void {
     const state = this.store.state;
@@ -62,24 +76,63 @@ export class Replies {
     if (parts.length > 3) { this.store.state.pages = parts; this.more(); }
     else this.enqueue(parts);
   }
-  enqueue(texts: string[], files: State['outbox'] = []): void {
+  private preemptLive(): void {
+    for (const message of this.liveQueue.splice(0)) message.resolve();
+    this.sendingLive?.abort();
+  }
+  private finishLive(live: LiveText): void {
+    const index = this.liveQueue.findIndex(message => message.live === live);
+    if (index >= 0) this.liveQueue.splice(index, 1)[0].resolve();
+  }
+  stream(text: string, signal: AbortSignal): LiveText | undefined {
+    text = returnedFiles(text).text; // File declarations are consumed only after successful execution.
+    if (!text.trim() || signal.aborted || this.signal.aborted) return;
+    const live: LiveText = { parts: splitReply(text).map(text => ({ id: `wcode-${randomUUID()}`, text, sent: false })), done: Promise.resolve() };
+    if (this.blocked || !this.store.state.contextToken || this.store.state.outbox.length) return live;
+    let resolve!: () => void;
+    const cancel = () => this.finishLive(live);
+    live.done = new Promise<void>(done => { resolve = () => { signal.removeEventListener('abort', cancel); done(); }; });
+    this.liveQueue.push({ live, signal, resolve });
+    signal.addEventListener('abort', cancel, { once: true });
+    this.flush();
+    return live;
+  }
+  enqueue(texts: string[], files: State['outbox'] = [], preempt = true): void {
     this.store.state.outbox.push(...texts.map(text => ({ id: `wcode-${randomUUID()}`, text })), ...files);
-    this.store.save(); this.flush();
+    this.store.save(); if (preempt) this.preemptLive(); this.flush();
   }
   resume(): void { this.generation++; this.blocked = false; this.flush(); }
   flush(): void {
-    if (this.pending || this.blocked || this.signal.aborted) return;
+    if (this.blocked || this.signal.aborted) { this.preemptLive(); return; }
+    if (this.pending) return;
     this.pending = this.drain().catch(e => {
       this.blocked = true;
       if (!this.signal.aborted) this.onError(e, true);
     }).finally(() => {
       this.pending = undefined;
-      if (this.store.state.outbox.length && this.store.state.contextToken) this.flush();
+      if ((this.store.state.outbox.length || this.liveQueue.length) && this.store.state.contextToken) this.flush();
     });
   }
   async drain(): Promise<void> {
     const state = this.store.state;
-    while (state.outbox.length && state.contextToken && !this.signal.aborted) {
+    while ((state.outbox.length || this.liveQueue.length) && state.contextToken && !this.signal.aborted) {
+      if (!state.outbox.length) {
+        const message = this.liveQueue.shift()!;
+        if (message.signal.aborted) { message.resolve(); continue; }
+        const controller = new AbortController(); this.sendingLive = controller;
+        try {
+          for (const part of message.live.parts) {
+            const signal = AbortSignal.any([this.signal, message.signal, controller.signal, AbortSignal.timeout(3_000)]);
+            signal.throwIfAborted();
+            await this.api.send(part.text, state.contextToken, part.id, signal);
+            part.sent = true;
+          }
+        } catch (e) {
+          if (!this.signal.aborted && (expired(e) || (!message.signal.aborted && !controller.signal.aborted))) this.onError(e);
+        }
+        finally { this.sendingLive = undefined; message.resolve(); }
+        continue;
+      }
       const message = state.outbox[0];
       for (let attempt = 0; ; attempt++) {
         const generation = this.generation;

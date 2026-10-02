@@ -6,6 +6,15 @@ import { join, resolve } from 'node:path';
 import { acquireLock } from './store.ts';
 
 export const serviceLabel = (home: string) => `io.wcode.bot.${createHash('sha256').update(resolve(home)).digest('hex').slice(0, 12)}`;
+export function serviceStatus(home: string): { loaded: boolean; detail: string; pid?: number; exitCode?: number } {
+  if (process.platform !== 'darwin') return { loaded: false, detail: 'launchd 只支持 macOS' };
+  const label = serviceLabel(home);
+  const result = spawnSync('/bin/launchctl', ['print', `gui/${process.getuid!()}/${label}`], { encoding: 'utf8', timeout: 20_000 });
+  if (result.error) throw result.error;
+  const pid = result.stdout.match(/\bpid = (\d+)/)?.[1], exitCode = result.stdout.match(/last exit code = (-?\d+)/)?.[1];
+  return { loaded: result.status === 0, detail: result.status === 0 ? result.stdout.trim() : `服务未加载：${label}`,
+    pid: pid === undefined ? undefined : Number(pid), exitCode: exitCode === undefined ? undefined : Number(exitCode) };
+}
 const xml = (value: string) => value.replace(/[<>&"']/g, char => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[char]!);
 export function launchdPlist(home: string, entry: string, cwd: string, path = process.env.PATH ?? '/usr/bin:/bin'): string {
   home = resolve(home);
@@ -31,10 +40,10 @@ export function service(action: string, home: string, entry: string): void {
   const label = serviceLabel(home), domain = `gui/${process.getuid!()}`, target = `${domain}/${label}`;
   const dir = join(homedir(), 'Library', 'LaunchAgents'), path = join(dir, `${label}.plist`);
   const ctl = (args: string[]) => spawnSync('/bin/launchctl', args, { encoding: 'utf8', timeout: 20_000 });
-  const current = ctl(['print', target]);
-  if (action === 'status') { console.log(current.status === 0 ? current.stdout.trim() : `服务未加载：${label}`); return; }
+  const current = serviceStatus(home);
+  if (action === 'status') { console.log(current.detail); return; }
   if (action === 'uninstall') {
-    if (current.status === 0) {
+    if (current.loaded) {
       const result = ctl(['bootout', target]);
       if (result.status !== 0) throw new Error(`launchctl bootout 失败：${result.stderr.trim()}`);
     }
@@ -42,7 +51,7 @@ export function service(action: string, home: string, entry: string): void {
     console.log('launchd 服务已卸载，配置和聊天状态保留。'); return;
   }
   if (action !== 'install') throw new Error('用法：wcode service install|status|uninstall');
-  if (current.status === 0) throw new Error('服务已加载；更新安装路径或 PATH 前先运行 wcode service uninstall');
+  if (current.loaded) throw new Error('服务已加载；更新安装路径或 PATH 前先运行 wcode service uninstall');
   const release = acquireLock(home); release();
   if (!existsSync(join(home, 'auth.json'))) throw new Error('请先运行 wcode login');
   mkdirSync(dir, { recursive: true }); mkdirSync(join(home, 'logs'), { recursive: true, mode: 0o700 });

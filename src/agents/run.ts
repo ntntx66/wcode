@@ -9,6 +9,7 @@ export async function run(spec: AgentSpec, o: RunOptions): Promise<string> {
   o.signal.throwIfAborted();
   const child = spawn(spec.command, spec.args(o), { cwd: o.cwd, detached: true, stdio: 'pipe' });
   let stderr = '', text = '', failure: Error | undefined, escalation: Promise<void> | undefined, finished = false;
+  let lastText: string | undefined;
   const descendants = new Set<number>();
   const kill = (signal: NodeJS.Signals) => {
     if (!child.pid) return;
@@ -59,7 +60,13 @@ export async function run(spec: AgentSpec, o: RunOptions): Promise<string> {
         let obj: unknown;
         try { obj = JSON.parse(line); } catch { continue; }
         for (const event of spec.parseLine(obj)) {
-          if (event.type === 'text' && event.text.trim()) text = event.text;
+          if (event.type === 'text') {
+            if (!event.text.trim() || failure || o.signal.aborted) continue;
+            text = event.text;
+            if (lastText === text) continue; // Claude repeats the assistant answer in its result event.
+            lastText = text;
+          }
+          if (event.type === 'tool') lastText = undefined;
           if (event.type === 'error') failure = new Error(event.message);
           o.onEvent(event);
         }
@@ -69,7 +76,7 @@ export async function run(spec: AgentSpec, o: RunOptions): Promise<string> {
     if (escalation) await escalation; // The leader may exit while grandchildren survive with closed pipes.
     o.signal.throwIfAborted();
     if (failure) throw failure;
-    if (code !== 0 && (!text || spec.output === 'text')) throw new Error(stderr.trim().split('\n').slice(-20).join('\n') || `${spec.name} 退出码 ${code}`);
+    if (code !== 0) throw new Error(stderr.trim().split('\n').slice(-20).join('\n') || `${spec.name} 退出码 ${code}`);
     return text || '任务已结束，没有文本输出。';
   } catch (e) {
     if (!finished) stop();

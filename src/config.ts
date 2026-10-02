@@ -1,9 +1,9 @@
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
-import { realpathSync, statSync } from 'node:fs';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { readJson } from './store.ts';
 
-export const VERSION = '0.2.0';
+export const VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 export const names = ['claude', 'codex', 'pi'] as const;
 export type AgentName = string;
 export type AgentConfig = { command: string; extraArgs: string[]; type?: 'text'; args?: string[] };

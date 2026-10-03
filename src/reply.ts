@@ -78,9 +78,9 @@ export class Replies {
     state.pages = next.pages;
     this.enqueue(next.outbox);
   }
-  send(text: string): void {
+  send(text: string, paginate = true): void {
     const parts = splitReply(text);
-    if (parts.length > 3) { this.store.state.pages = parts; this.more(); }
+    if (paginate && parts.length > 3) { this.store.state.pages = parts; this.more(); }
     else this.enqueue(messages(parts));
   }
   cancelLive(): void {

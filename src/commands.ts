@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import { directory } from './config.ts';
 import type { Config } from './config.ts';
 import { sessionKey, taskStatuses } from './store.ts';
@@ -31,7 +32,7 @@ export function command(text: string, bot: CommandHost): boolean {
   }
   try {
     switch (cmd) {
-      case 'help': say('/help /帮助：命令列表\n/status /状态：运行情况、排队和最近执行状态\n/stop /停止：停止并清空队列\n/new /新建：重开当前会话\n/agent [名称|序号]：查看或切换 agent\n/cd [别名|序号|绝对路径]：查看或切换目录\n/model [名称|default]：查看或设置模型\n/more /更多：下一页\n/send /发送 路径：回传本机文件（≤100 MiB，路径无需引号）\n支持图片、文件和语音转写。发送失败的结果已保存，发任意新消息可触发补发。'); break;
+      case 'help': say('/help /帮助：命令列表\n/status /状态：运行情况、排队和最近执行状态\n/stop /停止：停止并清空队列\n/new /新建：重开当前会话\n/agent [名称|序号]：查看或切换 agent\n/cd [名称|序号|绝对路径]：查看或切换项目，路径自动收录\n/cd rm 名称|序号：移除项目记录，不删除文件\n/model [名称|default]：查看或设置模型\n/more /更多：下一页\n/send /发送 路径：回传本机文件（≤100 MiB，路径无需引号）\n支持图片、文件和语音转写。发送失败的结果已保存，发任意新消息可触发补发。'); break;
       case 'status': say([
         `Agent：${s.agent} · 模型：${s.models[s.agent] ?? 'default'}`, `目录：${s.cwd}`,
         `会话：${config.agents[s.agent]?.type === 'text' ? '纯文本 CLI（无会话恢复）' : s.sessions[sessionKey(s)] ?? '新会话'}`,
@@ -65,18 +66,32 @@ export function command(text: string, bot: CommandHost): boolean {
         break;
       }
       case 'cd': {
-        const entries = config.projects;
+        const entries = s.projects ?? config.projects;
         const list = (projects: typeof entries) => projects.map(project => `${entries.indexOf(project) + 1}. ${project.name}：${project.path}`).join('\n');
-        if (!arg) { say(`当前目录：${s.cwd}\n` + (list(entries) || '未配置项目，可直接 /cd /绝对路径')); break; }
-        const matches = entries.filter(project => project.name === arg);
-        const numbered = /^\d+$/.test(arg) ? entries[Number(arg) - 1]?.path : undefined;
-        if (!numbered && matches.length > 1) { say(`项目别名「${arg}」重复，请用 /cd 序号选择：\n${list(matches)}`); break; }
-        const path = numbered ?? matches[0]?.path ?? (/^\d+$/.test(arg) ? undefined : arg);
-        if (!path) throw new Error('项目序号不存在');
-        s.cwd = directory(path);
-        s.pages = [];
-        store.save();
-        say(`目录：${s.cwd}\n${s.sessions[sessionKey(s)] ? '将续接此项目的会话。' : '下轮新建会话。'}`);
+        if (!arg) { replies.send(`当前目录：${s.cwd}\n` + (list(entries) || '暂无项目，可直接 /cd /绝对路径'), false); break; }
+        const remove = /^rm(?:\s|$)/.test(arg), target = remove ? arg.slice(2).trim() : arg;
+        if (!target) throw new Error('用法：/cd rm 名称|序号');
+        const numeric = /^\d+$/.test(target);
+        const directPath = !remove && (target.startsWith('/') || target === '~' || target.startsWith('~/'));
+        const matches = directPath ? [] : entries.filter(project => project.name === target);
+        const selected = numeric ? entries[Number(target) - 1] : matches[0];
+        if (numeric && !selected) throw new Error('项目序号不存在');
+        if (!numeric && matches.length > 1) {
+          replies.send(`项目别名「${target}」重复，请用 /cd ${remove ? 'rm ' : ''}序号选择：\n${list(matches)}`, false); break;
+        }
+        if (remove && !selected) throw new Error('项目不存在');
+        const previous = { cwd: s.cwd, pages: s.pages, projects: s.projects };
+        if (remove) s.projects = entries.filter(project => project !== selected);
+        else {
+          const path = directory(selected?.path ?? target);
+          s.projects = entries.some(project => project.path === path) ? entries : [...entries, { name: basename(path) || path, path }];
+          s.cwd = path;
+          s.pages = [];
+        }
+        try { store.save(); }
+        catch (e) { Object.assign(s, previous); throw e; }
+        replies.send(remove ? `已移除项目：${selected!.name}，文件未删除。` :
+          `目录：${s.cwd}\n${s.sessions[sessionKey(s)] ? '将续接此项目的会话。' : '下轮新建会话。'}`, false);
         break;
       }
       case 'model':

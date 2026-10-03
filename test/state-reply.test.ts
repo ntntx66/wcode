@@ -37,7 +37,9 @@ test('configuration derives folder aliases, preserves collisions and accepts exi
   mkdirSync(first, { recursive: true }); mkdirSync(second, { recursive: true });
   writeJson(join(home, 'config.json'), { projects: [first, `${first}/`, second] });
   assert.deepEqual(loadConfig(home).projects, [{ name: 'project', path: first }, { name: 'project', path: second }]);
-  for (const config of [{ turnTimeoutMinutes: 0 }, { defaultAgent: 'invalid' }, { agents: [] }, { projects: 'bad' }, { projects: null }, { projects: [null] }, { projects: [42] }, { projects: [join(home, 'missing')] }, { agents: { pi: null } }, { agents: { claude: { extraArgs: '-bad' } } }]) {
+  writeJson(join(home, 'config.json'), { projects: [join(home, 'missing')] });
+  assert.deepEqual(loadConfig(home).projects, [{ name: 'missing', path: join(home, 'missing') }]);
+  for (const config of [{ turnTimeoutMinutes: 0 }, { defaultAgent: 'invalid' }, { agents: [] }, { projects: 'bad' }, { projects: null }, { projects: [null] }, { projects: [42] }, { projects: ['relative/path'] }, { agents: { pi: null } }, { agents: { claude: { extraArgs: '-bad' } } }]) {
     writeJson(join(home, 'config.json'), config); assert.throws(() => loadConfig(home));
   }
 });

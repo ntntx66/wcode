@@ -13,7 +13,7 @@ import { inbound } from './wechat/inbound.ts';
 import { Replies } from './reply.ts';
 import type { LiveText } from './reply.ts';
 import { command, isCommand } from './commands.ts';
-import { isAgent } from './config.ts';
+import { directory, isAgent } from './config.ts';
 import { textAgent } from './agents/text.ts';
 import { download } from './wechat/media.ts';
 import type { Downloaded } from './wechat/media.ts';
@@ -47,6 +47,7 @@ export class Bot {
       if (fatal || expired(e)) this.fail(e);
     });
     const s = store.state;
+    if (s.projects === undefined) { s.projects = structuredClone(config.projects); store.save(); }
     if (s.task?.status === 'running' || s.pendingInputs.length) {
       const running = s.task?.status === 'running';
       s.task = {
@@ -134,6 +135,8 @@ export class Bot {
     });
     let response: string, succeeded = false;
     try {
+      try { directory(cwd); }
+      catch { throw new Error(`当前目录不可用：${cwd}，请用 /cd 切换。`); }
       const attachments = inputs.flatMap(input => input.attachments), files: Downloaded[] = [];
       if (attachments.length > 10) throw new Error('每轮最多接收 10 个附件，请分批发送');
       for (const attachment of attachments) {

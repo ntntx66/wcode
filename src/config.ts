@@ -15,9 +15,14 @@ export type Config = {
 };
 export const dataDir = () => resolve(process.env.WCODE_HOME || join(homedir(), '.wcode'));
 export const isAgent = (v: unknown): v is typeof names[number] => names.includes(v as typeof names[number]);
-export function directory(value: string): string {
+function absolutePath(value: string): string {
   const path = value === '~' ? homedir() : value.startsWith('~/') ? join(homedir(), value.slice(2)) : value;
-  if (!isAbsolute(path) || !statSync(path).isDirectory()) throw new Error(`不是有效的绝对目录：${value}`);
+  if (!isAbsolute(path)) throw new Error(`不是有效的绝对目录：${value}`);
+  return path;
+}
+export function directory(value: string): string {
+  const path = absolutePath(value);
+  if (!statSync(path).isDirectory()) throw new Error(`不是有效的绝对目录：${value}`);
   return realpathSync(path);
 }
 export function loadConfig(home: string): Config {
@@ -47,7 +52,12 @@ export function loadConfig(home: string): Config {
   const entries = Array.isArray(c.projects) ? c.projects.map(path => [undefined, path] as const) : Object.entries(record(c.projects));
   for (const [index, [name, path]] of entries.entries()) {
     if (typeof path !== 'string') throw new Error(`projects.${name ?? index} 必须是路径`);
-    const resolved = directory(path);
+    let resolved = absolutePath(path);
+    try { resolved = directory(resolved); }
+    catch (e) {
+      if (!['ENOENT', 'ENOTDIR', 'EACCES'].includes((e as NodeJS.ErrnoException).code ?? '')) throw e;
+      resolved = resolve(resolved);
+    }
     const alias = name ?? (basename(resolved) || resolved);
     if (!projects.some(project => project.name === alias && project.path === resolved)) projects.push({ name: alias, path: resolved });
   }

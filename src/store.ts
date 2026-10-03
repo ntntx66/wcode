@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { validAgentName, record } from './values.ts';
 import { readJson, writeJson } from './json.ts';
-import type { AgentName } from './config.ts';
+import type { AgentName, Project } from './config.ts';
 import type { LocalFile } from './files.ts';
 import type { FileItem } from './wechat/media.ts';
 import type { Inbound } from './wechat/inbound.ts';
@@ -19,6 +19,7 @@ export type TaskState = {
 };
 export type State = {
   cursor: string; contextToken: string; agent: AgentName; cwd: string;
+  projects?: Project[];
   models: Partial<Record<AgentName, string>>; sessions: Record<string, string>;
   outbox: { id: string; text: string; file?: LocalFile; item?: FileItem }[]; pages: string[];
   task?: TaskState; pendingInputs: TaskInput[];
@@ -62,6 +63,10 @@ export class Store {
       !s.sessions || typeof s.sessions !== 'object' || Array.isArray(s.sessions) || !Array.isArray(s.outbox) ||
       Object.values(record(s.models)).some(x => typeof x !== 'string') ||
       Object.values(record(s.sessions)).some(x => typeof x !== 'string') ||
+      (s.projects !== undefined && (!Array.isArray(s.projects) || s.projects.some(value => {
+        const project = record(value);
+        return typeof project.name !== 'string' || typeof project.path !== 'string' || !project.path.startsWith('/');
+      }))) ||
       s.outbox.some(x => typeof x?.id !== 'string' || typeof x?.text !== 'string' ||
         (x.file !== undefined && !validFile(x.file)) ||
         (x.item !== undefined && (!x.file || x.item?.type !== 4 || typeof x.item.file_item?.file_name !== 'string' ||

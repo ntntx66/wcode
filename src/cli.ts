@@ -56,7 +56,9 @@ async function main(): Promise<void> {
       const value = record(readJson(authPath, {}));
       if (['token', 'baseUrl', 'botId', 'ownerId'].some(k => typeof value[k] !== 'string' || !value[k])) throw new Error('请先运行 wcode login');
       const auth = value as Auth; trustedBase(auth.baseUrl);
-      const store = new Store(home, defaults); store.state.cwd = directory(store.state.cwd);
+      const store = new Store(home, defaults);
+      try { store.state.cwd = directory(store.state.cwd); }
+      catch { console.error(`当前目录不可用：${store.state.cwd}，请用 /cd 切换。`); }
       const bot = new Bot(store, config, auth);
       if (args[0] === '--echo') bot.execute = async (_spec, o) => o.prompt;
       console.log(`wcode ${VERSION} 已启动${args[0] === '--echo' ? '（回声模式）' : ''}，Ctrl-C 退出。`);

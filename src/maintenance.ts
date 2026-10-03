@@ -65,10 +65,10 @@ export function doctor(home: string): Check[] {
     return home;
   });
   let config: ReturnType<typeof loadConfig> | undefined, state: State | undefined;
-  inspect('配置', () => { config = loadConfig(home); return `${Object.keys(config.agents).length} 个 agent · ${config.projects.length} 个项目`; });
+  inspect('配置', () => { config = loadConfig(home); return `${Object.keys(config.agents).length} 个 agent`; });
   inspect('状态', () => {
     state = new Store(home, initialState(config?.defaultAgent ?? 'claude', config?.projects[0]?.path ?? resolve(process.cwd()))).state;
-    return `最近执行：${state.task ? taskStatuses[state.task.status] : '无记录'} · 待执行 ${state.pendingInputs.length} · 待补发 ${state.outbox.length}`;
+    return `项目 ${(state.projects ?? config?.projects ?? []).length} 个 · 最近执行：${state.task ? taskStatuses[state.task.status] : '无记录'} · 待执行 ${state.pendingInputs.length} · 待补发 ${state.outbox.length}`;
   });
   inspect('登录凭据', () => {
     const value = record(readJson(join(home, 'auth.json'), {}));

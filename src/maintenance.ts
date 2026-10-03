@@ -65,9 +65,9 @@ export function doctor(home: string): Check[] {
     return home;
   });
   let config: ReturnType<typeof loadConfig> | undefined, state: State | undefined;
-  inspect('配置', () => { config = loadConfig(home); return `${Object.keys(config.agents).length} 个 agent · ${Object.keys(config.projects).length} 个项目`; });
+  inspect('配置', () => { config = loadConfig(home); return `${Object.keys(config.agents).length} 个 agent · ${config.projects.length} 个项目`; });
   inspect('状态', () => {
-    state = new Store(home, initialState(config?.defaultAgent ?? 'claude', Object.values(config?.projects ?? {})[0] ?? resolve(process.cwd()))).state;
+    state = new Store(home, initialState(config?.defaultAgent ?? 'claude', config?.projects[0]?.path ?? resolve(process.cwd()))).state;
     return `最近执行：${state.task ? taskStatuses[state.task.status] : '无记录'} · 待执行 ${state.pendingInputs.length} · 待补发 ${state.outbox.length}`;
   });
   inspect('登录凭据', () => {
@@ -81,7 +81,7 @@ export function doctor(home: string): Check[] {
       add(mode & 0o077 ? 'WARN' : 'OK', `${name} 权限`, mode.toString(8));
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') add('ERROR', `${name} 权限`, String(e)); }
   }
-  const cwd = state?.cwd ?? Object.values(config?.projects ?? {})[0] ?? resolve(process.cwd());
+  const cwd = state?.cwd ?? config?.projects[0]?.path ?? resolve(process.cwd());
   inspect('工作目录', () => directory(cwd));
   if (config) {
     const required = state?.agent ?? config.defaultAgent;

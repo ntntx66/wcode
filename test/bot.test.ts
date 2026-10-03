@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
@@ -10,6 +11,8 @@ import { run } from '../src/agents/run.ts';
 import type { RunOptions } from '../src/agents/run.ts';
 import { codex } from '../src/agents/codex.ts';
 import { fileInstructions } from '../src/files.ts';
+import { loadConfig } from '../src/config.ts';
+import { writeJson } from '../src/json.ts';
 import { Ilink, IlinkError } from '../src/wechat/ilink.ts';
 import { auth, channel, eventually, message, setup, untilAbort } from './helpers.ts';
 
@@ -112,7 +115,7 @@ test('commands stay responsive while sends are blocked; stop clears queue and pr
 });
 test('exact command matching, aliases, model reset, project session reuse and /new scope', async t => {
   const { home, store, config } = setup(t), prompts: string[] = [];
-  config.projects.project = home;
+  config.projects.push({ name: 'project', path: home });
   const bot = new Bot(store, config, auth, channel(), async (_spec, o) => { prompts.push(o.prompt); return 'done'; }, () => {});
   let cursor = 0;
   const send = (text: string) => bot.accept({ get_updates_buf: String(++cursor), msgs: [message(text)] });
@@ -128,6 +131,44 @@ test('exact command matching, aliases, model reset, project session reuse and /n
   assert.deepEqual(prompts, ['/Users/me/a.ts 这里有 bug', '/statusXYZ', '1']);
   send('/帮助'); send('/状态'); send('/更多');
   await eventually(() => !bot.replies.pending);
+});
+test('folder aliases switch projects and duplicate aliases require a numbered choice without changing state', async t => {
+  const { home, store } = setup(t);
+  const paths = ['unique', 'one/shared', 'two/shared', 'one/2', 'two/2', 'folder with spaces'].map(path => join(home, path));
+  for (const path of paths) mkdirSync(path, { recursive: true });
+  writeJson(join(home, 'config.json'), { projects: paths });
+  const config = loadConfig(home), replies: string[] = [];
+  const bot = new Bot(store, config, auth, channel(), async () => assert.fail('project commands must not run an agent'));
+  bot.replies.send = text => { replies.push(text); };
+  let cursor = 0;
+  const send = (text: string) => bot.accept({ get_updates_buf: String(++cursor), msgs: [message(text)] });
+  const disk = () => new Store(home, initialState('pi', home)).state;
+  send('/cd');
+  assert.ok(replies.at(-1)?.includes(`1. unique：${paths[0]}`));
+  assert.ok(replies.at(-1)?.includes(`3. shared：${paths[2]}`));
+  send('/cd unique');
+  assert.equal(disk().cwd, paths[0]);
+  store.state.pages = ['keep page']; store.save();
+  send('/cd shared');
+  assert.equal(disk().cwd, paths[0]);
+  assert.deepEqual(disk().pages, ['keep page']);
+  assert.match(replies.at(-1)!, /重复.*\/cd 序号/);
+  assert.ok(replies.at(-1)?.includes(`2. shared：${paths[1]}`));
+  assert.ok(replies.at(-1)?.includes(`3. shared：${paths[2]}`));
+  store.state.sessions[`claude:${paths[2]}`] = 'saved-session'; store.save();
+  send('/cd 3');
+  assert.equal(disk().cwd, paths[2]);
+  assert.deepEqual(disk().pages, []);
+  assert.match(replies.at(-1)!, /续接此项目/);
+  send('/cd 2');
+  assert.equal(disk().cwd, paths[1]);
+  send('/cd 99');
+  assert.equal(disk().cwd, paths[1]);
+  assert.match(replies.at(-1)!, /序号不存在/);
+  send('/cd folder with spaces');
+  assert.equal(disk().cwd, paths[5]);
+  send(`/cd ${paths[4]}`);
+  assert.equal(disk().cwd, paths[4]);
 });
 test('turn timeout aborts the runner, and invalid auth stops polling', async t => {
   const { store, config } = setup(t); config.turnTimeoutMinutes = 0.0002;

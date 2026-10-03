@@ -16,6 +16,10 @@ export type CommandHost = {
 };
 const summary = (inputs: TaskInput[]) => Array.from(inputs.map(input => input.text || `[${input.attachments.length} 个附件]`)
   .join(' / ').replace(/\s+/g, ' ')).slice(0, 100).join('');
+const statusTime = new Intl.DateTimeFormat('sv-SE', {
+  year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  hourCycle: 'h23', timeZoneName: 'longOffset',
+});
 export function command(text: string, bot: CommandHost): boolean {
   const [, word, tail = ''] = text.trim().match(/^(\S+)(?:\s+([\s\S]*))?$/) ?? [];
   const cmd = word && Object.hasOwn(aliases, word) ? aliases[word] : undefined;
@@ -36,8 +40,8 @@ export function command(text: string, bot: CommandHost): boolean {
         ...(s.task ? [
           `最近执行：${taskStatuses[s.task.status]} · ${s.task.agent} · ${s.task.cwd}`,
           ...(s.task.inputs.length ? [`请求：${summary(s.task.inputs)}`] : []),
-          ...(s.task.started ? [`开始：${new Date(s.task.started).toISOString()}`] : []),
-          ...(s.task.ended ? [`结束：${new Date(s.task.ended).toISOString()}`] : []),
+          ...(s.task.started ? [`开始：${statusTime.format(s.task.started)}`] : []),
+          ...(s.task.ended ? [`结束：${statusTime.format(s.task.ended)}`] : []),
           ...(s.task.queuedInputs?.length ? [`未执行 ${s.task.queuedInputs.length} 条：${summary(s.task.queuedInputs)}`] : []),
           ...(s.task.status === 'interrupted' ? ['未自动重跑，执行结果待核查。'] : []),
         ] : []),
@@ -61,9 +65,13 @@ export function command(text: string, bot: CommandHost): boolean {
         break;
       }
       case 'cd': {
-        const entries = Object.entries(config.projects);
-        if (!arg) { say(`当前目录：${s.cwd}\n` + (entries.map(([name, path], i) => `${i + 1}. ${name}：${path}`).join('\n') || '未配置项目，可直接 /cd /绝对路径')); break; }
-        const path = Object.hasOwn(config.projects, arg) ? config.projects[arg] : /^\d+$/.test(arg) ? entries[Number(arg) - 1]?.[1] : arg;
+        const entries = config.projects;
+        const list = (projects: typeof entries) => projects.map(project => `${entries.indexOf(project) + 1}. ${project.name}：${project.path}`).join('\n');
+        if (!arg) { say(`当前目录：${s.cwd}\n` + (list(entries) || '未配置项目，可直接 /cd /绝对路径')); break; }
+        const matches = entries.filter(project => project.name === arg);
+        const numbered = /^\d+$/.test(arg) ? entries[Number(arg) - 1]?.path : undefined;
+        if (!numbered && matches.length > 1) { say(`项目别名「${arg}」重复，请用 /cd 序号选择：\n${list(matches)}`); break; }
+        const path = numbered ?? matches[0]?.path ?? (/^\d+$/.test(arg) ? undefined : arg);
         if (!path) throw new Error('项目序号不存在');
         s.cwd = directory(path);
         s.pages = [];

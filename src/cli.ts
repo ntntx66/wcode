@@ -44,7 +44,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
   try {
     const config = loadConfig(home), authPath = join(home, 'auth.json');
-    const defaults = initialState(config.defaultAgent, Object.values(config.projects)[0] ?? directory(process.cwd()));
+    const defaults = initialState(config.defaultAgent, config.projects[0]?.path ?? directory(process.cwd()));
     if (action === 'login') {
       const old = record(readJson(authPath, {})), auth = await login(controller.signal);
       const store = new Store(home, defaults);

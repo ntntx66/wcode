@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { acquireLock, initialState, Store } from '../src/store.ts';
@@ -28,11 +28,16 @@ test('exclusive live lock, stale recovery, and release are safe across processes
   writeJson(join(home, 'wcode.lock'), { pid: 2_147_483_647 });
   const releaseRecovered = acquireLock(home); releaseRecovered();
 });
-test('configuration validates timeout and argument types and resolves project aliases', t => {
+test('configuration derives folder aliases, preserves collisions and accepts existing explicit aliases', t => {
   const { home } = setup(t);
   writeJson(join(home, 'config.json'), { projects: { project: home }, agents: { pi: { extraArgs: ['-a'] } } });
   assert.deepEqual(loadConfig(home).agents.pi.extraArgs, ['-a']);
-  for (const config of [{ turnTimeoutMinutes: 0 }, { defaultAgent: 'invalid' }, { agents: [] }, { projects: 'bad' }, { agents: { pi: null } }, { agents: { claude: { extraArgs: '-bad' } } }]) {
+  assert.deepEqual(loadConfig(home).projects, [{ name: 'project', path: home }]);
+  const first = join(home, 'one', 'project'), second = join(home, 'two', 'project');
+  mkdirSync(first, { recursive: true }); mkdirSync(second, { recursive: true });
+  writeJson(join(home, 'config.json'), { projects: [first, `${first}/`, second] });
+  assert.deepEqual(loadConfig(home).projects, [{ name: 'project', path: first }, { name: 'project', path: second }]);
+  for (const config of [{ turnTimeoutMinutes: 0 }, { defaultAgent: 'invalid' }, { agents: [] }, { projects: 'bad' }, { projects: null }, { projects: [null] }, { projects: [42] }, { projects: [join(home, 'missing')] }, { agents: { pi: null } }, { agents: { claude: { extraArgs: '-bad' } } }]) {
     writeJson(join(home, 'config.json'), config); assert.throws(() => loadConfig(home));
   }
 });

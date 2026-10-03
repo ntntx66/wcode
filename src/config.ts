@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { readJson } from './json.ts';
 import { record, validAgentName } from './values.ts';
@@ -8,8 +8,9 @@ export const VERSION: string = JSON.parse(readFileSync(new URL('../package.json'
 export const names = ['claude', 'codex', 'pi'] as const;
 export type AgentName = string;
 export type AgentConfig = { command: string; extraArgs: string[]; type?: 'text'; args?: string[] };
+export type Project = { name: string; path: string };
 export type Config = {
-  defaultAgent: AgentName; projects: Record<string, string>;
+  defaultAgent: AgentName; projects: Project[];
   agents: Record<AgentName, AgentConfig>; turnTimeoutMinutes: number; mobilePreamble: boolean;
 };
 export const dataDir = () => resolve(process.env.WCODE_HOME || join(homedir(), '.wcode'));
@@ -22,9 +23,11 @@ export function directory(value: string): string {
 export function loadConfig(home: string): Config {
   const raw = readJson(join(home, 'config.json'), {});
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('config.json 必须是对象');
-  const c = record(raw), agents: Config['agents'] = Object.create(null), projects: Record<string, string> = Object.create(null);
-  for (const key of ['agents', 'projects']) if (c[key] !== undefined && (c[key] === null || typeof c[key] !== 'object' || Array.isArray(c[key])))
-    throw new Error(`${key} 必须是对象`);
+  const c = record(raw), agents: Config['agents'] = Object.create(null), projects: Project[] = [];
+  if (c.agents !== undefined && (c.agents === null || typeof c.agents !== 'object' || Array.isArray(c.agents)))
+    throw new Error('agents 必须是对象');
+  if (c.projects !== undefined && (c.projects === null || typeof c.projects !== 'object'))
+    throw new Error('projects 必须是路径数组或别名对象');
   const defaultAgent = c.defaultAgent ?? 'claude';
   for (const name of new Set([...names, ...Object.keys(record(c.agents))])) {
     if (!validAgentName(name)) throw new Error(`agent 名称无效：${name}`);
@@ -41,9 +44,12 @@ export function loadConfig(home: string): Config {
       agents[name].type = 'text'; agents[name].args = (a.args ?? []) as string[];
     } else if (a.type !== undefined || a.args !== undefined) throw new Error(`内置 ${name} 请使用 extraArgs`);
   }
-  for (const [name, path] of Object.entries(record(c.projects))) {
-    if (typeof path !== 'string') throw new Error(`projects.${name} 必须是路径`);
-    projects[name] = directory(path);
+  const entries = Array.isArray(c.projects) ? c.projects.map(path => [undefined, path] as const) : Object.entries(record(c.projects));
+  for (const [index, [name, path]] of entries.entries()) {
+    if (typeof path !== 'string') throw new Error(`projects.${name ?? index} 必须是路径`);
+    const resolved = directory(path);
+    const alias = name ?? (basename(resolved) || resolved);
+    if (!projects.some(project => project.name === alias && project.path === resolved)) projects.push({ name: alias, path: resolved });
   }
   const turnTimeoutMinutes = c.turnTimeoutMinutes ?? 60, mobilePreamble = c.mobilePreamble ?? true;
   if (typeof turnTimeoutMinutes !== 'number' || !Number.isFinite(turnTimeoutMinutes) || turnTimeoutMinutes <= 0 || turnTimeoutMinutes * 60_000 > 2_147_483_647)

@@ -8,6 +8,33 @@ import { initialState, Store } from '../src/store.ts';
 import { writeJson } from '../src/json.ts';
 import { auth, channel, eventually, message, setup, untilAbort } from './helpers.ts';
 
+test('status displays system local time with an offset across date and daylight-saving boundaries', t => {
+  const { home, store } = setup(t);
+  store.state.task = { status: 'succeeded', agent: 'claude', cwd: home, inputs: [],
+    started: Date.UTC(2026, 0, 1, 19, 4, 5), ended: Date.UTC(2026, 6, 1, 19, 5, 6) };
+  store.save();
+  const module = (name: string) => new URL(`../src/${name}.ts`, import.meta.url).href;
+  for (const [timezone, started, ended] of [
+    ['Asia/Shanghai', '2026-01-02 03:04:05 GMT+08:00', '2026-07-02 03:05:06 GMT+08:00'],
+    ['America/New_York', '2026-01-01 14:04:05 GMT\u221205:00', '2026-07-01 15:05:06 GMT\u221204:00'],
+    ['UTC', '2026-01-01 19:04:05 GMT', '2026-07-01 19:05:06 GMT'],
+  ]) {
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import { command } from ${JSON.stringify(module('commands'))};
+      import { Store, initialState } from ${JSON.stringify(module('store'))};
+      import { loadConfig } from ${JSON.stringify(module('config'))};
+      const home = process.argv[1];
+      command('/status', { store: new Store(home, initialState('claude', home)), config: loadConfig(home),
+        replies: { send: text => console.log(text) }, queuedCount: 0, stopTask() {} });
+    `, home], { env: { ...process.env, TZ: timezone }, encoding: 'utf8', timeout: 10_000 });
+    assert.equal(child.status, 0, child.stderr);
+    assert.ok(child.stdout.includes(`开始：${started}`), child.stdout);
+    assert.ok(child.stdout.includes(`结束：${ended}`), child.stdout);
+  }
+  assert.equal(new Store(home, initialState('pi', home)).state.task?.started, store.state.task.started);
+  assert.equal(new Store(home, initialState('pi', home)).state.task?.ended, store.state.task.ended);
+});
+
 test('status reports running, merged queue and the last execution without task history or results', async t => {
   const { home, store, config } = setup(t), sent: string[] = [], finish: ((text: string) => void)[] = [];
   const bot = new Bot(store, config, auth, channel(sent), async () => new Promise(resolve => finish.push(resolve)));

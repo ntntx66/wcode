@@ -5,7 +5,8 @@ import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, re
 import { join } from 'node:path';
 import { doctor, cleanMedia, executable, mediaUsage } from '../src/maintenance.ts';
 import { LOG_BACKUPS, rotateLog } from '../src/logs.ts';
-import { acquireLock, Store, initialState, writeJson } from '../src/store.ts';
+import { acquireLock, Store, initialState } from '../src/store.ts';
+import { writeJson } from '../src/json.ts';
 import { saveMedia } from '../src/files.ts';
 import { VERSION } from '../src/config.ts';
 import { auth, setup } from './helpers.ts';

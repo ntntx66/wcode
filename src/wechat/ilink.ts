@@ -1,7 +1,8 @@
 // Protocol adapted from @tencent-weixin/openclaw-weixin 2.4.9 (MIT); see THIRD_PARTY_NOTICES.md.
 import { randomBytes } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { record, VERSION } from '../config.ts';
+import { VERSION } from '../config.ts';
+import { record } from '../values.ts';
 import type { Auth } from '../store.ts';
 import type { LocalFile } from '../files.ts';
 import { upload } from './media.ts';

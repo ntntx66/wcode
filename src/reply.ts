@@ -7,6 +7,14 @@ import { returnedFiles, snapshotFile } from './files.ts';
 
 type ReplyChannel = Pick<Ilink, 'send'> & Partial<Pick<Ilink, 'uploadFile' | 'sendFile'>>;
 export type LiveText = { parts: { id: string; text: string; sent: boolean }[]; done: Promise<void> };
+type PreparedReply = Pick<State, 'pages' | 'outbox'>;
+const messages = (texts: string[]): State['outbox'] => texts.map(text => ({ id: `wcode-${randomUUID()}`, text }));
+
+function firstPage(parts: string[], files: State['outbox'] = []): PreparedReply {
+  const page = parts.slice(0, 3), pages = parts.slice(3);
+  if (pages.length) page[page.length - 1] += `\n还有 ${pages.length} 段，发送 /more`;
+  return { pages, outbox: [...messages(page), ...files] };
+}
 
 export function splitReply(raw: string, limit = 2_000): string[] {
   let text = raw.replace(/!\[[^\]]*\]\((?:[^()\n]|\([^()\n]*\))*\)/g, '')
@@ -35,8 +43,7 @@ export class Replies {
   constructor(store: Store, api: ReplyChannel, signal: AbortSignal, onError: (e: unknown, fatal?: boolean) => void, retryMs = 2_000) {
     this.store = store; this.api = api; this.signal = signal; this.onError = onError; this.retryMs = retryMs;
   }
-  clearPages(): void { this.store.state.pages = []; this.store.save(); }
-  result(text: string, cwd?: string, live?: LiveText): void {
+  prepareResult(text: string, cwd?: string, live?: LiveText): PreparedReply {
     const files: State['outbox'] = [], notices: string[] = [];
     if (cwd) {
       const result = returnedFiles(text);
@@ -57,26 +64,26 @@ export class Replies {
         return [{ id: previous?.text === text ? previous.id : `wcode-${randomUUID()}`, text }];
       });
       const warnings = notices.flatMap(text => splitReply(text).map(text => ({ id: `wcode-${randomUUID()}`, text })));
-      this.store.state.pages = []; this.enqueue([], [...missing, ...warnings, ...files], false);
-    } else { this.store.state.pages = parts; this.more(files); }
+      return { pages: [], outbox: [...missing, ...warnings, ...files] };
+    }
+    return firstPage(parts, files);
   }
   file(path: string, cwd: string): void {
-    this.store.state.outbox.push({ id: `wcode-${randomUUID()}`, text: '', file: snapshotFile(this.store.home, path, cwd) });
-    this.store.save(); this.preemptLive(); this.flush();
+    this.enqueue([{ id: `wcode-${randomUUID()}`, text: '', file: snapshotFile(this.store.home, path, cwd) }]);
   }
-  more(files: State['outbox'] = []): void {
+  more(): void {
     const state = this.store.state;
     if (!state.pages.length) { this.send('没有更多内容。'); return; }
-    const page = state.pages.splice(0, 3);
-    if (state.pages.length) page[page.length - 1] += `\n还有 ${state.pages.length} 段，发送 /more`;
-    this.enqueue(page, files);
+    const next = firstPage(state.pages);
+    state.pages = next.pages;
+    this.enqueue(next.outbox);
   }
   send(text: string): void {
     const parts = splitReply(text);
     if (parts.length > 3) { this.store.state.pages = parts; this.more(); }
-    else this.enqueue(parts);
+    else this.enqueue(messages(parts));
   }
-  private preemptLive(): void {
+  cancelLive(): void {
     for (const message of this.liveQueue.splice(0)) message.resolve();
     this.sendingLive?.abort();
   }
@@ -97,13 +104,19 @@ export class Replies {
     this.flush();
     return live;
   }
-  enqueue(texts: string[], files: State['outbox'] = [], preempt = true): void {
-    this.store.state.outbox.push(...texts.map(text => ({ id: `wcode-${randomUUID()}`, text })), ...files);
-    this.store.save(); if (preempt) this.preemptLive(); this.flush();
+  private enqueue(outbox: State['outbox']): void {
+    this.store.state.outbox.push(...outbox);
+    this.store.save();
+    this.cancelLive();
+    this.flush();
   }
-  resume(): void { this.generation++; this.blocked = false; this.flush(); }
+  resume(): void {
+    this.generation++;
+    this.blocked = false;
+    this.flush();
+  }
   flush(): void {
-    if (this.blocked || this.signal.aborted) { this.preemptLive(); return; }
+    if (this.blocked || this.signal.aborted) { this.cancelLive(); return; }
     if (this.pending) return;
     this.pending = this.drain().catch(e => {
       this.blocked = true;
@@ -154,7 +167,8 @@ export class Replies {
           await sleep(this.retryMs * 2 ** attempt, undefined, { signal: this.signal });
         }
       }
-      state.outbox.shift(); this.store.save();
+      state.outbox.shift();
+      this.store.save();
     }
   }
 }

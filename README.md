@@ -4,9 +4,9 @@
 
 单个 Node 进程直连微信 iLink 协议，每轮以子进程运行 agent（默认 yolo），不依赖 OpenClaw / ACP / SDK。运行时依赖仅 `qrcode-terminal`，要求 Node ≥ 22.18。
 
-已实现 M0–M3：扫码登录、文本/语音转写/图片/文件输入、三个 agent、会话恢复、命令、队列、typing、回复分页与失败补发，以及文件回传、纯文本 CLI agent、launchd 和可全局安装的 JavaScript 包。设计见 [docs/design.md](docs/design.md)，实测结果与边界见 [docs/verification.md](docs/verification.md)。本次交付 `.tgz`，不公开发布 npm（注册表上的同名 `wcode` 是其他项目）。
+当前已实现：扫码登录、文本/语音转写/图片/文件输入、三个 agent、会话恢复、命令、队列、typing、回复分页与失败补发，以及文件回传、纯文本 CLI agent、launchd 和可全局安装的 JavaScript 包。设计见 [docs/design.md](docs/design.md)，实测结果与边界见 [docs/verification.md](docs/verification.md)。本次交付 `.tgz`，不公开发布 npm（注册表上的同名 `wcode` 是其他项目）。
 
-M4 将当前或最近一次执行状态收缩到 `/status`，异常退出后提示中断，不自动重跑；增加 `wcode doctor` 本地诊断、日志轮转和媒体清理预览。继续使用单进程、串行执行和 JSON 状态文件，无新增运行时依赖，不维护任务历史。
+当前或最近一次执行状态集中在 `/status`，异常退出后提示中断，不自动重跑；增加 `wcode doctor` 本地诊断、日志轮转和媒体清理预览。继续使用单进程、串行执行和 JSON 状态文件，无新增运行时依赖，不维护任务历史。
 
 0.3.0 将 Claude、Codex、pi 面向用户的完整文本直接发到微信：有中间说明就发，最终答案也直接发，无需等待工具调用，不人为限频或合并。不会额外要求 agent 写进度，也不生成摘要。只读完整文本事件，不转发思考、工具输出或逐字增量。
 
@@ -146,8 +146,13 @@ npm run smoke -- claude pi      # 可选：真实 CLI 新会话、工具调用�
 npm run smoke:progress -- claude codex pi # 真实 CLI → 本地 HTTP 收件端；验证文字直发和续接，不连接微信
 npm run smoke:media -- claude codex pi  # 可选：真实图片新会话与续接，实际调用模型
 npm run smoke:service           # macOS 临时 launchd 进程验证，不连接微信
-npm pack                       # 检查、构建并生成 wcode-0.3.0.tgz
+npm run release                # 检查、干净构建、打包、临时安装与回放验证，输出 tgz + SHA-256
+npm pack                       # 仅检查、干净构建与打包
 ```
+
+发布产物位于 `artifacts/release/<version>/`。`release` 每个阶段只执行一次，校验包内白名单和编译产物与源码对应关系，再在独立临时目录安装并验证；可能从 npm 获取依赖，不发布 npm，也不修改实际全局安装。单独验证安装版可运行 `node scripts/verify-installed.ts /安装目录/lib/node_modules/wcode`。
+
+四个烟测脚本统一处理 Ctrl-C/SIGTERM：取消执行、等待子进程或服务清理、移除临时目录后退出。协议/模型相关烟测按变更范围选择，日常检查不需要调用真实模型。
 
 测试包含真实 JSONL 样本、HTTP 通道到子进程的完整链路、跨进程锁、故障恢复、分页，以及忽略 SIGINT 的子孙进程被 SIGKILL 清理（包括独立进程组和父进程先退出的情况）。停止时用系统 `ps` 追踪子孙进程；已经完全脱离父子关系的守护进程不在追踪范围内。实机联调步骤见 [docs/verification.md](docs/verification.md)。
 

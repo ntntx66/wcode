@@ -1,7 +1,8 @@
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
-import { readJson } from './store.ts';
+import { readJson } from './json.ts';
+import { record, validAgentName } from './values.ts';
 
 export const VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 export const names = ['claude', 'codex', 'pi'] as const;
@@ -13,9 +14,6 @@ export type Config = {
 };
 export const dataDir = () => resolve(process.env.WCODE_HOME || join(homedir(), '.wcode'));
 export const isAgent = (v: unknown): v is typeof names[number] => names.includes(v as typeof names[number]);
-export const validAgentName = (v: unknown): v is string => typeof v === 'string' && /^[a-z][a-z0-9_-]{0,63}$/.test(v) && !['constructor', 'prototype', '__proto__'].includes(v);
-export const record = (v: unknown): Record<string, unknown> =>
-  v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {};
 export function directory(value: string): string {
   const path = value === '~' ? homedir() : value.startsWith('~/') ? join(homedir(), value.slice(2)) : value;
   if (!isAbsolute(path) || !statSync(path).isDirectory()) throw new Error(`不是有效的绝对目录：${value}`);

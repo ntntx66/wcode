@@ -7,6 +7,17 @@ import { initialState, Store } from '../src/store.ts';
 import { loadConfig } from '../src/config.ts';
 import type { Auth } from '../src/store.ts';
 import type { Channel } from '../src/bot.ts';
+import type { Replies } from '../src/reply.ts';
+
+// Replies prepares a result; the caller commits it together with its own state transition.
+export function deliverResult(replies: Replies, ...args: Parameters<Replies['prepareResult']>): void {
+  const result = replies.prepareResult(...args);
+  replies.store.state.pages = result.pages;
+  replies.store.state.outbox.push(...result.outbox);
+  replies.store.save();
+  if (!args[2]) replies.cancelLive();
+  replies.flush();
+}
 
 export const auth: Auth = { token: 'test-token', ownerId: 'owner', botId: 'bot', baseUrl: 'https://ilinkai.weixin.qq.com' };
 export function setup(t: TestContext) {

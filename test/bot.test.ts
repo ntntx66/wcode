@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
@@ -12,6 +12,62 @@ import { codex } from '../src/agents/codex.ts';
 import { fileInstructions } from '../src/files.ts';
 import { Ilink, IlinkError } from '../src/wechat/ilink.ts';
 import { auth, channel, eventually, message, setup, untilAbort } from './helpers.ts';
+
+test('configuration changes are durable independently of reply sending', t => {
+  const { home, store, config } = setup(t);
+  const bot = new Bot(store, config, auth, channel());
+  bot.replies.send = () => {};
+  const project = `${home}/project`;
+  mkdirSync(project);
+  let cursor = 0;
+  const send = (text: string) => bot.accept({ get_updates_buf: String(++cursor), msgs: [message(text)] });
+  const disk = () => new Store(home, initialState('pi', home)).state;
+  store.state.pages = ['old page'];
+  send('/agent codex');
+  assert.equal(disk().agent, 'codex');
+  assert.deepEqual(disk().pages, []);
+  send(`/cd ${project}`);
+  assert.equal(disk().cwd, project);
+  send('/model selected');
+  assert.equal(disk().models.codex, 'selected');
+  store.state.sessions[`codex:${project}`] = 'old-session';
+  store.save();
+  send('/new');
+  assert.equal(disk().sessions[`codex:${project}`], undefined);
+});
+
+test('task completion and its result commit together; a failed commit never sends the result', async t => {
+  const { home, store, config } = setup(t);
+  let failCommit = true;
+  const save = store.save.bind(store);
+  store.save = () => {
+    if (store.state.task?.status === 'succeeded') {
+      assert.ok(store.state.outbox.some(item => item.text === 'durable result'));
+      if (failCommit) throw new Error('disk full');
+    }
+    save();
+  };
+  const sent: string[] = [];
+  const bot = new Bot(store, config, auth, channel(sent), async () => {
+    const disk = new Store(home, initialState('pi', home)).state;
+    assert.equal(disk.task?.status, 'running');
+    assert.equal(disk.task?.inputs[0].text, 'work');
+    assert.deepEqual(disk.pages, []);
+    return 'durable result';
+  }, () => {});
+  store.state.pages = ['old page'];
+  bot.accept({ get_updates_buf: '1', msgs: [message('work')] });
+  await bot.active?.done;
+  await bot.replies.pending;
+  assert.match(String(bot.failure), /disk full/);
+  assert.deepEqual(sent, []);
+  assert.equal(new Store(home, initialState('pi', home)).state.task?.status, 'running');
+  failCommit = false;
+  save();
+  const restored = new Store(home, initialState('pi', home));
+  assert.equal(restored.state.task?.status, 'succeeded');
+  assert.equal(restored.state.outbox[0].text, 'durable result');
+});
 
 test('cursor is durable before execution; duplicate cursor, strangers and failed persistence never execute', async t => {
   const { store, config } = setup(t); let runs = 0;
@@ -33,7 +89,7 @@ test('queued messages merge once; sessions persist immediately and channel rules
     return new Promise(resolve => finish.push(resolve));
   }, () => {});
   bot.accept({ get_updates_buf: '1', msgs: [message('one'), message('two'), message('three')] });
-  assert.equal(calls.length, 1); assert.equal(bot.queue.length, 2); assert.equal(calls[0].prompt, 'one');
+  assert.equal(calls.length, 1); assert.equal(bot.queuedCount, 2); assert.equal(calls[0].prompt, 'one');
   assert.match(calls[0].system ?? '', /^\[微信通道\]\n你的回复会发到微信/); assert.ok(calls[0].system?.endsWith(fileInstructions));
   assert.equal(new Store(home, initialState('pi', home)).state.sessions[`claude:${home}`], 'persisted-session');
   finish[0]('first result'); await eventually(() => calls.length === 2);
@@ -47,10 +103,10 @@ test('commands stay responsive while sends are blocked; stop clears queue and pr
     calls.push(o); o.onEvent({ type: 'tool', name: 'bash', detail: 'long job' }); await untilAbort(o.signal); o.signal.throwIfAborted(); return '';
   }, () => {});
   bot.accept({ get_updates_buf: '1', msgs: [message('run'), message('queued'), message('/status'), message('/agent 2')] });
-  assert.equal(store.state.agent, 'claude'); assert.equal(bot.queue.length, 1);
+  assert.equal(store.state.agent, 'claude'); assert.equal(bot.queuedCount, 1);
   assert.ok(store.state.outbox.some(x => x.text.includes('bash：long job')));
   bot.accept({ get_updates_buf: '2', msgs: [message('/停止')] });
-  assert.equal(bot.queue.length, 0); assert.ok(calls[0].signal.aborted);
+  assert.equal(bot.queuedCount, 0); assert.ok(calls[0].signal.aborted);
   await bot.active?.done; assert.equal(calls.length, 1);
   bot.controller.abort(); await bot.replies.pending;
 });

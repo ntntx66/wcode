@@ -9,7 +9,8 @@ import { run } from '../src/agents/run.ts';
 import { textAgent } from '../src/agents/text.ts';
 import { codex } from '../src/agents/codex.ts';
 import { pi } from '../src/agents/pi.ts';
-import { initialState, Store, writeJson } from '../src/store.ts';
+import { initialState, Store } from '../src/store.ts';
+import { writeJson } from '../src/json.ts';
 import { launchdPlist, serviceLabel } from '../src/service.ts';
 import { digest } from '../src/files.ts';
 import { auth, channel, eventually, message, setup, untilAbort } from './helpers.ts';
@@ -50,7 +51,7 @@ test('media downloads are cancellable while commands remain responsive; failures
   bot.download = async (_attachment, _home, signal) => { downloading = true; await untilAbort(signal); signal.throwIfAborted(); throw new Error('unreachable'); };
   const img = { ...message(''), item_list: [{ type: 2, image_item: {} }] };
   bot.accept({ get_updates_buf: '1', msgs: [img, message('queued'), message('/status'), message('/stop')] });
-  assert.ok(downloading); assert.equal(bot.queue.length, 0);
+  assert.ok(downloading); assert.equal(bot.queuedCount, 0);
   await bot.active?.done; await eventually(() => !bot.replies.pending);
   assert.equal(runs, 0); assert.ok(sent.some(text => text.includes('下载微信附件'))); assert.ok(sent.some(text => text.includes('任务已停止')));
   bot.download = async () => { throw new Error('cannot decrypt'); };

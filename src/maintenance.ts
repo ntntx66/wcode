@@ -1,7 +1,9 @@
 import { constants, accessSync, lstatSync, readdirSync, realpathSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { directory, loadConfig, record, VERSION } from './config.ts';
-import { acquireLock, initialState, readJson, Store, taskStatuses } from './store.ts';
+import { directory, loadConfig, VERSION } from './config.ts';
+import { record } from './values.ts';
+import { acquireLock, initialState, Store, taskStatuses } from './store.ts';
+import { readJson } from './json.ts';
 import type { State } from './store.ts';
 import { trustedBase } from './wechat/ilink.ts';
 import { readSnapshot } from './files.ts';

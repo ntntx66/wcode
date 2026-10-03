@@ -1,4 +1,4 @@
-import { record } from '../config.ts';
+import { record } from '../values.ts';
 export type AgentEvent =
   | { type: 'session'; id: string }
   | { type: 'tool'; name: string; detail?: string }

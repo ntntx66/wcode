@@ -1,6 +1,6 @@
 // Protocol adapted from @tencent-weixin/openclaw-weixin 2.4.9 (MIT).
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { record } from '../config.ts';
+import { record } from '../values.ts';
 import { MAX_MEDIA_BYTES, readSnapshot, saveMedia } from '../files.ts';
 import type { LocalFile } from '../files.ts';
 import type { Ilink } from './ilink.ts';

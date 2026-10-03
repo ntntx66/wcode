@@ -1,4 +1,4 @@
-import { record } from '../config.ts';
+import { record } from '../values.ts';
 import type { Attachment } from './media.ts';
 export type Inbound = { text: string; commandText: string; contextToken?: string; attachments: Attachment[] };
 const itemText = (item: Record<string, unknown>) => {

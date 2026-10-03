@@ -4,7 +4,8 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { Bot } from '../src/bot.ts';
 import { command, isCommand } from '../src/commands.ts';
-import { initialState, Store, writeJson } from '../src/store.ts';
+import { initialState, Store } from '../src/store.ts';
+import { writeJson } from '../src/json.ts';
 import { auth, channel, eventually, message, setup, untilAbort } from './helpers.ts';
 
 test('status reports running, merged queue and the last execution without task history or results', async t => {
@@ -94,10 +95,12 @@ test('stop clears queued inputs, preserves messages after stop and timeout repor
   });
   bot.accept({ get_updates_buf: '1', msgs: [message('run'), message('queued')] });
   bot.accept({ get_updates_buf: '2', msgs: [message('queued too'), message('/stop'), message('after stop')] });
+  assert.equal(bot.queuedCount, 1);
   assert.deepEqual(store.state.pendingInputs.map(input => input.text), ['after stop']);
   await eventually(() => calls.length === 2); assert.deepEqual(calls, ['run', 'after stop']);
   bot.accept({ get_updates_buf: '3', msgs: [message('/stop')] }); await bot.active?.done;
   assert.equal(store.state.task?.status, 'stopped'); assert.deepEqual(store.state.pendingInputs, []);
+  assert.equal(bot.queuedCount, 0);
   config.turnTimeoutMinutes = 0.0002;
   bot.accept({ get_updates_buf: '4', msgs: [message('timeout')] }); await bot.active?.done;
   assert.equal(store.state.task?.status, 'failed'); await eventually(() => !bot.replies.pending);

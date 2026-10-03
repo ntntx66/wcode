@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { acquireLock, initialState, Store, writeJson } from '../src/store.ts';
+import { acquireLock, initialState, Store } from '../src/store.ts';
+import { writeJson } from '../src/json.ts';
 import { loadConfig } from '../src/config.ts';
 import { Replies, splitReply } from '../src/reply.ts';
 import { IlinkError } from '../src/wechat/ilink.ts';
-import { eventually, setup } from './helpers.ts';
+import { deliverResult, eventually, setup } from './helpers.ts';
 
 test('atomic state and credentials have private modes; malformed state fails closed', t => {
   const { home, store } = setup(t);
@@ -43,11 +44,11 @@ test('splitting respects paragraphs, Unicode and the 2000-unit limit including p
   const raw = '👋中文\n'.repeat(2_000);
   const parts = splitReply(raw); assert.ok(parts.length > 3);
   for (const part of parts) { assert.ok(part.length <= 2_000); assert.ok(!/\p{Surrogate}/u.test(part)); }
-  replies.result(raw); assert.equal(store.state.pages.length, parts.length - 3);
+  deliverResult(replies, raw); assert.equal(store.state.pages.length, parts.length - 3);
   assert.equal(store.state.outbox.length, 3); assert.match(store.state.outbox[2].text, /发送 \/more/);
   for (const item of store.state.outbox) assert.ok(item.text.length <= 2_000);
   replies.more(); assert.equal(store.state.pages.length, Math.max(parts.length - 6, 0));
-  replies.clearPages(); assert.deepEqual(store.state.pages, []);
+  store.state.pages = []; store.save(); assert.deepEqual(store.state.pages, []);
   t.after(async () => { await eventually(() => !replies.pending); });
 });
 test('retry exhaustion persists ordered outbox and reuses IDs with the latest context after restart', async t => {

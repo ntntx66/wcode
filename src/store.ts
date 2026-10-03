@@ -1,7 +1,8 @@
-import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { closeSync, mkdirSync, openSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { validAgentName, record } from './config.ts';
+import { validAgentName, record } from './values.ts';
+import { readJson, writeJson } from './json.ts';
 import type { AgentName } from './config.ts';
 import type { LocalFile } from './files.ts';
 import type { FileItem } from './wechat/media.ts';
@@ -46,19 +47,6 @@ function validTask(value: unknown, legacy = false): boolean {
     (task.started === undefined || positive(task.started)) && (task.ended === undefined || positive(task.ended)) &&
     Array.isArray(task.inputs) && task.inputs.every(validInput) &&
     (task.queuedInputs === undefined || (Array.isArray(task.queuedInputs) && task.queuedInputs.every(validInput)));
-}
-export function readJson(path: string, fallback: unknown): unknown {
-  try { return JSON.parse(readFileSync(path, 'utf8')); }
-  catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return fallback; throw new Error(`无法读取 ${path}`, { cause: e }); }
-}
-export function writeJson(path: string, value: unknown): void {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const temp = `${path}.${randomUUID()}.tmp`;
-  try {
-    const fd = openSync(temp, 'wx', 0o600);
-    try { writeFileSync(fd, JSON.stringify(value, null, 2) + '\n'); fsyncSync(fd); } finally { closeSync(fd); }
-    renameSync(temp, path);
-  } finally { try { unlinkSync(temp); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; } }
 }
 export class Store {
   state: State;

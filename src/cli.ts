@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dataDir, directory, loadConfig, record, VERSION } from './config.ts';
-import { acquireLock, initialState, readJson, Store, writeJson } from './store.ts';
+import { dataDir, directory, loadConfig, VERSION } from './config.ts';
+import { record } from './values.ts';
+import { acquireLock, initialState, Store } from './store.ts';
+import { readJson, writeJson } from './json.ts';
 import type { Auth } from './store.ts';
 import { trustedBase } from './wechat/ilink.ts';
 import { login } from './wechat/login.ts';

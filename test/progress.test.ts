@@ -10,7 +10,7 @@ import { Bot } from '../src/bot.ts';
 import { Replies, splitReply } from '../src/reply.ts';
 import { Store, initialState } from '../src/store.ts';
 import { IlinkError } from '../src/wechat/ilink.ts';
-import { auth, channel, eventually, message, setup, untilAbort } from './helpers.ts';
+import { auth, channel, deliverResult, eventually, message, setup, untilAbort } from './helpers.ts';
 
 for (const spec of [claude, codex, pi]) test(`${spec.name}: recorded complete text is forwarded in order with the repeated final event removed`, async t => {
   const { home } = setup(t), events: AgentEvent[] = [];
@@ -101,7 +101,7 @@ test('failed progress is attempted once and does not block later progress or a d
   replies.stream('failed progress', controller.signal); replies.stream('next progress', controller.signal);
   await eventually(() => !replies.pending);
   assert.equal(errors.length, 1); assert.equal(replies.blocked, false); assert.deepEqual(store.state.outbox, []);
-  replies.result('final result'); await eventually(() => !replies.pending);
+  deliverResult(replies, 'final result'); await eventually(() => !replies.pending);
   assert.deepEqual(sent, ['failed progress', 'next progress', 'final result']);
 });
 
@@ -115,10 +115,10 @@ test('acknowledged final text is not repeated; file declarations are hidden unti
   const raw = `完成。\nWCODE_FILE: ${home}/output.txt`;
   const live = replies.stream(raw, controller.signal); await eventually(() => !replies.pending);
   assert.deepEqual(sent, ['完成。']); assert.equal(uploads, 0);
-  replies.result(raw, home, live); await eventually(() => !replies.pending);
+  deliverResult(replies, raw, home, live); await eventually(() => !replies.pending);
   assert.deepEqual(sent, ['完成。']); assert.equal(uploads, 1); assert.equal(files, 1);
   assert.deepEqual(store.state.outbox, []);
-  replies.result(`完成。\nWCODE_FILE: ${home}/missing.txt`, home, live); await eventually(() => !replies.pending);
+  deliverResult(replies, `完成。\nWCODE_FILE: ${home}/missing.txt`, home, live); await eventually(() => !replies.pending);
   assert.equal(sent.length, 2); assert.match(sent[1], /^❌ 文件回传：/); assert.equal(sent.filter(x => x === '完成。').length, 1);
 });
 
@@ -131,7 +131,7 @@ test('a partially delivered final answer persists only missing segments and reus
   const raw = '长答案😀'.repeat(600), parts = splitReply(raw);
   const live = replies.stream(raw, controller.signal)!; await eventually(() => !replies.pending);
   assert.equal(live.parts[0].sent, true); assert.ok(live.parts.slice(1).every(x => !x.sent));
-  replies.result(raw, home, live); await eventually(() => !replies.pending);
+  deliverResult(replies, raw, home, live); await eventually(() => !replies.pending);
   assert.deepEqual(store.state.outbox.map(x => x.text), parts.slice(1));
   assert.deepEqual(store.state.outbox.map(x => x.id), live.parts.slice(1).map(x => x.id));
   assert.equal(attempts.filter(x => x.text === parts[0]).length, 1);

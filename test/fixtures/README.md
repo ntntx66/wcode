@@ -2,7 +2,7 @@
 
 2026-09-30 在 macOS / Node v26.10.0 上录制：Claude Code 2.1.283、Codex CLI 0.157.1、pi 0.84.2。
 
-每个 agent 的 `new` 轮只执行 `printf wcode-fixture-ok`，记住 `WCODE_SESSION_7392`，最后回答 `WCODE_FIXTURE_OK`。`resume` 轮通过同一会话 ID 回答上一轮的 marker。两轮 prompt 均通过 stdin 输入；参数见设计 §6 和适配器。
+每个 agent 的 `new` 轮只执行 `printf wcode-fixture-ok`，记住 `WCODE_SESSION_7392`，最后回答 `WCODE_FIXTURE_OK`。`resume` 轮通过同一会话 ID 回答上一轮的 marker。两轮 prompt 均通过 stdin 输入；参数见设计 §5 和适配器。
 
 这些是实际 JSONL 的脱敏节选：移除了思考内容、签名、绝对路径、账户/插件信息和无关事件；会话 ID 替换为固定 UUID。保留解析器依赖的原始事件类型、层级、文本和工具字段。错误事件另在测试里构造，未冒充真实样本。
 

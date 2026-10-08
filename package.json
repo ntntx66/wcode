@@ -1,13 +1,29 @@
 {
-  "name": "wcode",
+  "name": "@ntntx66/wcode",
   "version": "0.3.3",
-  "private": true,
-  "license": "UNLICENSED",
   "description": "Run local coding agents from WeChat",
+  "repository": { "type": "git", "url": "git+https://github.com/ntntx66/wcode.git" },
+  "license": "UNLICENSED",
+  "author": "ntntx66",
+  "keywords": [
+    "wechat",
+    "cli",
+    "coding-agent",
+    "ai"
+  ],
   "type": "module",
-  "bin": { "wcode": "dist/cli.js" },
-  "files": ["dist", "README.md", "docs", "THIRD_PARTY_NOTICES.md"],
-  "engines": { "node": ">=22.18.0" },
+  "bin": {
+    "wcode": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "docs",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
     "start": "node src/cli.ts start",
     "login": "node src/cli.ts login",
@@ -22,6 +38,11 @@
     "smoke:media": "node scripts/smoke-media.ts",
     "smoke:service": "node scripts/smoke-service.ts"
   },
-  "dependencies": { "qrcode-terminal": "0.12.0" },
-  "devDependencies": { "@types/node": "22.18.6", "typescript": "5.9.3" }
+  "dependencies": {
+    "qrcode-terminal": "0.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.6",
+    "typescript": "5.9.3"
+  }
 }

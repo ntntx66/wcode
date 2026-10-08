@@ -4,7 +4,7 @@
 
 单个 Node 进程直连微信 iLink 协议，每轮以子进程运行 agent（默认 yolo），不依赖 OpenClaw / ACP / SDK。运行时依赖仅 `qrcode-terminal`，要求 Node ≥ 22.18。
 
-当前已实现：扫码登录、文本/语音转写/图片/文件输入、三个 agent、会话恢复、命令、队列、typing、回复分页与失败补发，以及文件回传、纯文本 CLI agent、launchd 和可全局安装的 JavaScript 包。设计见 [docs/design.md](docs/design.md)，实测结果与边界见 [docs/verification.md](docs/verification.md)。本次交付 `.tgz`，不公开发布 npm（注册表上的同名 `wcode` 是其他项目）。
+当前已实现：扫码登录、文本/语音转写/图片/文件输入、三个 agent、会话恢复、命令、队列、typing、回复分页与失败补发，以及文件回传、纯文本 CLI agent、launchd 和可全局安装的 JavaScript 包。设计见 [docs/design.md](docs/design.md)，实测结果与边界见 [docs/verification.md](docs/verification.md)。以 scoped 包 `@ntntx66/wcode` 发布到 npm（注册表上的同名 `wcode` 是其他项目）。
 
 当前或最近一次执行状态集中在 `/status`，异常退出后提示中断，不自动重跑；增加 `wcode doctor` 本地诊断、日志轮转和媒体清理预览。继续使用单进程、串行执行和 JSON 状态文件，无新增运行时依赖，不维护任务历史。
 
@@ -15,13 +15,13 @@
 ## 安装包
 
 ```bash
-npm i -g /绝对路径/wcode-0.3.2.tgz
+npm i -g @ntntx66/wcode
 wcode --version
 wcode login
 wcode start
 ```
 
-使用本项目生成的本地 `.tgz`，不要运行 `npm i -g wcode` 下载注册表上的同名项目。源码开发仍可直接运行 TypeScript；发布包的 `bin` 指向 `dist/cli.js`，不会触发 Node 对 `node_modules` 中 TypeScript 的限制。
+注意 `npm i -g wcode`（不带 scope）会安装注册表上的另一个同名项目，请使用完整包名 `@ntntx66/wcode`。源码开发仍可直接运行 TypeScript；发布包的 `bin` 指向 `dist/cli.js`，不会触发 Node 对 `node_modules` 中 TypeScript 的限制。
 
 ## 本地运行
 
